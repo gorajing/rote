@@ -17,6 +17,7 @@ from .config import VIEWPORT, APP_URL, TRACES_DIR
 from .schemas import Task
 from .cu_runner import run_task
 from .trace import save_trajectory
+from . import checker
 
 
 def _goto(page, url, attempts: int = 3):
@@ -73,8 +74,17 @@ if __name__ == "__main__":
 
     traj, path = run_episode(task, args.url, headless=args.headless)
 
+    if args.url.startswith(APP_URL):
+        try:
+            traj.success = checker.check(task)
+        except Exception as e:
+            print(f"\nChecker error: {e}")
+            traj.success = False
+
     print(f"\n=== Trajectory: {traj.n_steps} steps, used_skill={traj.used_skill} ===")
     for s in traj.steps:
         print(f"  [{s.turn:>2}] {s.action:<14} @ {str(s.coords):<12} — {s.intent}")
     print(f"final: {traj.final_text}")
     print(f"saved: {path}   (B can compile a skill from this; D can replay it)")
+    if traj.success is not None:
+        print(f"checker: {'PASS' if traj.success else 'FAIL'}")

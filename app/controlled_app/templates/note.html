@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Add Note — {{ invoice.id }}{% endblock %}
+{% block page_title %}Add Note{% endblock %}
+{% block page_sub %}<div class="sub">{{ invoice.customer }} · {{ invoice.id }}</div>{% endblock %}
+
+{% block content %}
+  <div class="form-card">
+    <div class="form-context">
+      Invoice <strong>{{ invoice.id }}</strong> for <strong>{{ invoice.customer }}</strong>
+      — ${{ "{:,.2f}".format(invoice.amount) }} ({{ invoice.status }})
+    </div>
+    <form action="{{ url_for('invoice_note', invoice_id=invoice.id) }}" method="POST">
+      <div class="field">
+        <label for="note-input">Invoice Note</label>
+        <input type="text" id="note-input" name="note" value="{{ invoice.note }}"
+               placeholder="Enter note text" autocomplete="off">
+        <div class="hint">This note is attached to the invoice record.</div>
+      </div>
+      <button type="submit" class="btn btn-primary" id="btn-save-note">Save Note</button>
+    </form>
+  </div>
+{% endblock %}
