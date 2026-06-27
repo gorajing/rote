@@ -13,8 +13,16 @@ from .schemas import Task, Trajectory
 from .executor import execute_action
 from .trace import screenshot_b64, save_screenshot, state_hash, record_step
 
-_client = genai.Client()
+_client = None
 _MODEL = LEGACY_CU_MODEL if USE_LEGACY_CU else CU_MODEL
+
+
+def _client_lazy():
+    """Construct the genai client on first use, so importing this module never requires a key."""
+    global _client
+    if _client is None:
+        _client = genai.Client()
+    return _client
 _TOOL = [{"type": "computer_use", "environment": "browser", "enable_prompt_injection_detection": True}]
 
 
@@ -37,7 +45,7 @@ def run_task(task: Task, page, skills=None, out_dir="traces") -> Trajectory:
     prompt = _skill_hint(skills) + task.intent
 
     save_screenshot(page, out_dir, task.id, 0)
-    interaction = _client.interactions.create(
+    interaction = _client_lazy().interactions.create(
         model=_MODEL,
         input=[
             {"type": "text", "text": prompt},
@@ -81,7 +89,7 @@ def run_task(task: Task, page, skills=None, out_dir="traces") -> Trajectory:
             traj.final_text = "ABORTED: stuck (no progress)"
             break
 
-        interaction = _client.interactions.create(
+        interaction = _client_lazy().interactions.create(
             model=_MODEL,
             previous_interaction_id=interaction.id,
             input=responses,

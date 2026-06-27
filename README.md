@@ -38,11 +38,16 @@ The **`Trajectory`** — an annotated pixel trace (`intent → action → coords
 See `docs/PLAN.md` for the full 26-hour plan, contracts, checkpoints, and risk register.
 
 ## Quickstart
+> macOS has no bare `python` — use **`python3`** to create the venv. After `activate`, plain `python` works.
 ```bash
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium
 cp .env.example .env        # add GEMINI_API_KEY, ROTE_MONGO_URI
+
+# smoke-test the CU loop against a public page (no controlled app needed yet):
+export GEMINI_API_KEY=...
+python -m app.runner --url https://www.google.com --intent "Search for 'Gemini API'."
 ```
 `app/cu_runner.run_task(task, page)` drives Gemini CU through one task and returns a `Trajectory`. It needs the controlled app (Owner C) running to drive against.
 
