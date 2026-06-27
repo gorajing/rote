@@ -106,29 +106,40 @@ def replay_skill(skill, page, verbose: bool = False, heal: bool = True) -> dict:
 if __name__ == "__main__":
     import requests
     from playwright.sync_api import sync_playwright
-    from .schemas import Task
     from .cu_runner import run_task
     from .skill_compiler import compile_skill
+    from .tasks import HERO
     from . import checker
     from .config import APP_URL
 
-    task = Task(id="replay-proof", site="billing",
-                intent="Find the unpaid invoice from Acme Corp, mark it disputed, "
-                       "add the note 'duplicate charge', then export the receipt.",
-                params={"customer": "Acme Corp", "note": "duplicate charge"},
-                checker="dispute_workflow", family="invoice_action")
+    task = HERO
+    MAX_COLD = 4
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
         page = browser.new_context(viewport={"width": VIEWPORT[0], "height": VIEWPORT[1]}).new_page()
-        requests.post(f"{APP_URL}/reset?variant=baseline", timeout=5)
-        page.goto(f"{APP_URL}/billing", wait_until="domcontentloaded")
-        cold = run_task(task, page); cold.success = checker.check(task)
-        print(f"COLD: ~{cold.n_steps} CU calls, checker={'PASS' if cold.success else 'FAIL'}")
+
+        # COLD — the hard arena fails zero-shot sometimes; retry until one checker-verified
+        # success (success-gating refuses to compile a failed run — the integrity spine).
+        cold = None
+        for attempt in range(1, MAX_COLD + 1):
+            requests.post(f"{APP_URL}/reset?variant=baseline", timeout=5)
+            page.goto(f"{APP_URL}/billing", wait_until="domcontentloaded")
+            t = run_task(task, page); t.success = checker.check(task)
+            print(f"COLD attempt {attempt}: {t.n_steps} steps, checker={'PASS' if t.success else 'FAIL'}")
+            if t.success:
+                cold = t
+                break
+        if cold is None:
+            browser.close()
+            raise SystemExit(f"no verified cold success in {MAX_COLD} attempts")
+
         skill = compile_skill(cold)
         print(f"COMPILED: {len(skill.steps)} steps, {sum(1 for s in skill.steps if s.get('crop_b64'))} crops")
         requests.post(f"{APP_URL}/reset?variant=baseline", timeout=5)
         page.goto(f"{APP_URL}/billing", wait_until="domcontentloaded")
-        res = replay_skill(skill, page); replay_ok = checker.check(task)
+        print("REPLAY (per-step):")
+        res = replay_skill(skill, page, verbose=True); replay_ok = checker.check(task)
         browser.close()
-    print(f"\n=== VERIFIED DETERMINISTIC REPLAY ===\nCU calls: {cold.n_steps} -> {res['cu_calls']}  "
+    print(f"\n=== VERIFIED DETERMINISTIC REPLAY (hard arena) ===\n"
+          f"cold {cold.n_steps} steps → CU calls {cold.n_steps} -> {res['cu_calls']}  "
           f"(escalations: {len(res['escalations'])})\nreplay checker: {'PASS' if replay_ok else 'FAIL'}")
