@@ -429,3 +429,61 @@ tbody tr:hover { background: #fafbff; }
   color: var(--text);
 }
 .kebab-menu a:hover, .kebab-menu form button:hover { background: #f5f6fa; }
+
+/* ---------- Filter bar ---------- */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.filter-chip {
+  display: inline-block;
+  padding: 7px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  transition: all 0.12s;
+}
+
+.filter-chip:hover { border-color: var(--primary); color: var(--primary); }
+.filter-chip.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.filter-meta {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ---------- Scrollable table ---------- */
+.table-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.cust-link {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+.cust-link:hover { text-decoration: underline; }
+
+.cases-panel {
+  border-left: 4px solid var(--primary);
+}

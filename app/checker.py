@@ -41,37 +41,54 @@ def check(task: Task) -> bool:
     return checker_fn(task, state)
 
 
-def _find_customer_invoice(state: dict, customer: str) -> dict | None:
-    for inv in state.get("invoices", []):
-        if inv["customer"] == customer:
-            return inv
-    return None
+def _matches_row(inv: dict, params: dict) -> bool:
+    if params.get("invoice_id") and inv["id"] != params["invoice_id"]:
+        return False
+    if params.get("customer") and inv["customer"] != params["customer"]:
+        return False
+    if params.get("min_amount") is not None and inv["amount"] <= params["min_amount"]:
+        return False
+    if params.get("required_status") and inv["status"] != params["required_status"]:
+        return False
+    return True
+
+
+def _find_matching_invoices(state: dict, params: dict) -> list[dict]:
+    return [inv for inv in state.get("invoices", []) if _matches_row(inv, params)]
 
 
 @_register("dispute_workflow")
 def _check_dispute_workflow(task: Task, state: dict) -> bool:
-    inv = _find_customer_invoice(state, task.params["customer"])
-    if not inv:
-        return False
-    return (inv["status"] == "disputed"
-            and inv["note"] == task.params["note"]
-            and inv["exported"] is True)
+    """Match by outcome (note+disputed+exported), not first row for customer."""
+    customer = task.params["customer"]
+    note = task.params["note"]
+    min_amount = task.params.get("min_amount")
+    for inv in state.get("invoices", []):
+        if inv["customer"] != customer:
+            continue
+        if min_amount is not None and inv["amount"] <= min_amount:
+            continue
+        if (inv["status"] == "disputed"
+                and inv["note"] == note
+                and inv["exported"] is True):
+            return True
+    return False
 
 
 @_register("row_find_act")
 def _check_row_find_act(task: Task, state: dict) -> bool:
-    """Verify a row-matching action: find by customer, check status/action."""
-    inv = _find_customer_invoice(state, task.params["customer"])
-    if not inv:
+    """Conditional row match: customer + min_amount + status predicates."""
+    p = task.params
+    candidates = _find_matching_invoices(state, p)
+    if not candidates:
         return False
-    expected_status = task.params.get("expected_status")
-    if expected_status and inv["status"] != expected_status:
-        return False
-    if task.params.get("require_exported") and not inv["exported"]:
-        return False
-    if task.params.get("expected_note") and inv["note"] != task.params["expected_note"]:
-        return False
-    return True
+    if p.get("expected_status"):
+        return any(inv["status"] == p["expected_status"] for inv in candidates)
+    if p.get("require_exported"):
+        return any(inv["exported"] for inv in candidates)
+    if p.get("expected_note"):
+        return any(inv["note"] == p["expected_note"] for inv in candidates)
+    return len(candidates) > 0
 
 
 @_register("settings_change")

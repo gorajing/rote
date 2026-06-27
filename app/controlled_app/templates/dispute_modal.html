@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Dispute — {{ invoice.id }}{% endblock %}
+{% block page_title %}Mark as Disputed{% endblock %}
+{% block page_sub %}<div class="sub">{{ invoice.customer }} · {{ invoice.id }} · ${{ "{:,.2f}".format(invoice.amount) }}</div>{% endblock %}
+
+{% block content %}
+  <div class="form-card">
+    <div class="form-context">
+      Select a dispute reason before confirming. A reason is <strong>required</strong>.
+    </div>
+    <form action="{{ url_for('invoice_dispute', invoice_id=invoice.id) }}" method="POST">
+      <div class="field">
+        <label for="reason-select">Dispute reason</label>
+        <select id="reason-select" name="reason" required>
+          <option value="">— Select reason —</option>
+          {% for r in reasons %}
+          <option value="{{ r }}">{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" id="btn-confirm-dispute">Confirm Dispute</button>
+      <a href="{{ url_for('billing') }}" class="btn btn-refund" style="margin-left:8px">Cancel</a>
+    </form>
+  </div>
+{% endblock %}

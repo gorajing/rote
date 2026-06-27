@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}AcmeBilling — {{ nav_label }}{% endblock %}
-{% block page_title %}{{ nav_label }}{% endblock %}
+{% block title %}AcmeBilling — Invoices{% endblock %}
+{% block page_title %}Invoices{% endblock %}
 {% block page_sub %}<div class="sub">Manage customer invoices, disputes, and receipts</div>{% endblock %}
 
 {% block content %}
@@ -22,76 +22,79 @@
     </div>
   </section>
 
+  <div class="filter-bar" id="status-filter">
+    <span class="filter-label">Status:</span>
+    <a href="{{ url_for('billing', status='paid') }}"
+       class="filter-chip {% if ui_filter == 'paid' %}active{% endif %}" id="filter-paid">Paid</a>
+    <a href="{{ url_for('billing', status='unpaid') }}"
+       class="filter-chip {% if ui_filter == 'unpaid' %}active{% endif %}" id="filter-unpaid">Unpaid</a>
+    <a href="{{ url_for('billing', status='all') }}"
+       class="filter-chip {% if ui_filter == 'all' %}active{% endif %}" id="filter-all">All</a>
+    <span class="filter-meta">Showing {{ invoices | length }} of {{ all_count }} records</span>
+  </div>
+
   <div class="panel">
     <div class="panel-head">
-      <h3 id="page-title">{{ nav_label }}</h3>
-      <span class="count">{{ invoices | length }} records</span>
+      <h3 id="page-title">Invoice list</h3>
     </div>
-    <table id="invoice-table">
-      <thead>
-        <tr>
-          {% for col in column_order %}
-            {% if col == "id" %}<th>Invoice ID</th>
-            {% elif col == "customer" %}<th>Customer</th>
-            {% elif col == "status" %}<th>Status</th>
-            {% elif col == "amount" %}<th>Amount</th>
-            {% elif col == "note" %}<th>Note</th>
-            {% elif col == "exported" %}<th>Exported</th>
-            {% elif col == "actions" %}<th>Actions</th>
-            {% endif %}
+    <div class="table-scroll">
+      <table id="invoice-table">
+        <thead>
+          <tr>
+            <th>Invoice ID</th>
+            <th>Customer</th>
+            <th>Status</th>
+            <th>Amount</th>
+            <th>Note</th>
+            <th>Exported</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for inv in invoices %}
+          <tr id="row-{{ inv.id }}" data-customer="{{ inv.customer }}" data-amount="{{ inv.amount }}">
+            <td><span class="mono">{{ inv.id }}</span></td>
+            <td>
+              {% if structural %}
+              <a href="{{ url_for('invoice_detail', invoice_id=inv.id) }}" class="cust-link">
+                <strong>{{ inv.customer }}</strong>
+              </a>
+              {% else %}
+              <span class="cust">{{ inv.customer }}</span>
+              {% endif %}
+            </td>
+            <td><span class="status status-{{ inv.status }}">{{ inv.status }}</span></td>
+            <td><span class="amount">${{ "{:,.2f}".format(inv.amount) }}</span></td>
+            <td>{% if inv.note %}{{ inv.note }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>
+              {% if inv.exported %}<span class="pill pill-yes">Yes</span>
+              {% else %}<span class="pill pill-no">No</span>{% endif %}
+            </td>
+            <td class="actions">
+              {% include "_kebab_actions.html" %}
+            </td>
+          </tr>
           {% endfor %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for inv in invoices %}
-        <tr id="row-{{ inv.id }}" data-customer="{{ inv.customer }}">
-          {% for col in column_order %}
-            {% if col == "id" %}
-              <td><span class="mono">{{ inv.id }}</span></td>
-            {% elif col == "customer" %}
-              <td><span class="cust">{{ inv.customer }}</span></td>
-            {% elif col == "status" %}
-              <td><span class="status status-{{ inv.status }}">{{ inv.status }}</span></td>
-            {% elif col == "amount" %}
-              <td><span class="amount">${{ "{:,.2f}".format(inv.amount) }}</span></td>
-            {% elif col == "note" %}
-              <td>{% if inv.note %}{{ inv.note }}{% else %}<span class="muted">—</span>{% endif %}</td>
-            {% elif col == "exported" %}
-              <td>
-                {% if inv.exported %}<span class="pill pill-yes">Yes</span>
-                {% else %}<span class="pill pill-no">No</span>{% endif %}
-              </td>
-            {% elif col == "actions" %}
-              <td class="actions">
-                {% if variant == "move_actions" %}
-                  {% include "_kebab_actions.html" %}
-                {% else %}
-                  {% include "_inline_actions.html" %}
-                {% endif %}
-              </td>
-            {% endif %}
-          {% endfor %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </tbody>
+      </table>
+    </div>
   </div>
 {% endblock %}
 
 {% block scripts %}
-  {% if variant == "move_actions" %}
-  <script>
-    document.querySelectorAll('.kebab-btn').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        const menu = btn.nextElementSibling;
-        document.querySelectorAll('.kebab-menu').forEach(m => { if (m !== menu) m.classList.remove('open'); });
-        menu.classList.toggle('open');
+<script>
+  document.querySelectorAll('.kebab-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const menu = btn.nextElementSibling;
+      document.querySelectorAll('.kebab-menu').forEach(m => {
+        if (m !== menu) m.classList.remove('open');
       });
+      menu.classList.toggle('open');
     });
-    document.addEventListener('click', () => {
-      document.querySelectorAll('.kebab-menu').forEach(m => m.classList.remove('open'));
-    });
-  </script>
-  {% endif %}
+  });
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.kebab-menu').forEach(m => m.classList.remove('open'));
+  });
+</script>
 {% endblock %}
