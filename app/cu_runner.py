@@ -89,11 +89,20 @@ def run_task(task: Task, page, skills=None, out_dir=TRACES_DIR) -> Trajectory:
             traj.final_text = "ABORTED: stuck (no progress)"
             break
 
-        interaction = _client_lazy().interactions.create(
-            model=_MODEL,
-            previous_interaction_id=interaction.id,
-            input=responses,
-            tools=_TOOL,
-        )
+        try:
+            interaction = _client_lazy().interactions.create(
+                model=_MODEL,
+                previous_interaction_id=interaction.id,
+                input=responses,
+                tools=_TOOL,
+            )
+        except Exception as e:
+            # The CU API rejects a continuation once the task is already complete
+            # ("no further action to perform"). That's a normal terminal state for a
+            # multi-step task, not a crash — treat it as graceful completion.
+            if "already complete" in str(e) or "no further action" in str(e):
+                traj.final_text = traj.final_text or "Task complete (no further action)."
+                break
+            raise
 
     return traj

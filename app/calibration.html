@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+  <title>Rote — coordinate calibration</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f4f4f8; }
+    h3 { padding: 14px 30px 0; color: #334; }
+    #grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; padding: 18px 30px; }
+    button {
+      height: 110px; font-size: 22px; font-weight: 700;
+      border: 2px solid #334a; border-radius: 10px; background: #fff; cursor: pointer;
+    }
+    button:active { background: #cfe; }
+    #log { padding: 8px 30px; font-size: 18px; color: #063; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h3>Click-accuracy grid (4×3, small adjacent targets)</h3>
+  <div id="grid"></div>
+  <div id="log">clicks: </div>
+  <script>
+    window.__clicks = [];
+    const grid = document.getElementById('grid');
+    for (let r = 1; r <= 3; r++) {
+      for (let c = 1; c <= 4; c++) {
+        const id = `R${r}C${c}`;
+        const b = document.createElement('button');
+        b.id = id;
+        b.textContent = id;
+        b.onclick = () => {
+          window.__clicks.push(id);
+          document.getElementById('log').textContent = 'clicks: ' + window.__clicks.join(', ');
+        };
+        grid.appendChild(b);
+      }
+    }
+  </script>
+</body>
+</html>
