@@ -1,8 +1,10 @@
 """Rote — shared config. One place for model ids, flags, endpoints. Read secrets from env."""
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()  # load keys from a local .env (gitignored) if present, before anything reads os.environ
+# load keys from the repo-root .env (gitignored) regardless of where python is launched from
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # --- Gemini Computer Use (the prize model) ---
 CU_MODEL = "gemini-3.5-flash"                                  # built-in computer_use; Interactions API (GA)
