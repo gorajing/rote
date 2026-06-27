@@ -1,0 +1,34 @@
+{
+  "name": "send_facebook_dm",
+  "site": "facebook",
+  "goal_template": "Send a direct message on Facebook to {recipient_name} containing: {message_text}",
+  "params": [
+    {"name": "recipient_name", "type": "str", "required": true},
+    {"name": "message_text",   "type": "str", "required": true},
+    {"name": "attachment_url", "type": "str", "required": false}
+  ],
+  "preconditions": {
+    "url_pattern": "facebook.com",
+    "landmarks": ["top navigation bar", "Messenger chat icon", "news feed"]
+  },
+  "steps": [
+    {"intent": "Navigate to Facebook and ensure the user is logged in",     "action": "navigate", "target_desc": "facebook.com in address bar",                     "param_ref": null},
+    {"intent": "Open the Messenger chat panel",                             "action": "click",    "target_desc": "Messenger speech-bubble icon in top nav bar",     "param_ref": null},
+    {"intent": "Start a new message thread",                                "action": "click",    "target_desc": "New message / pencil icon in the chat panel",     "param_ref": null},
+    {"intent": "Search for the recipient in the To field",                  "action": "type",     "target_desc": "To: search field in new-message dialog",          "param_ref": "recipient_name"},
+    {"intent": "Select the matching contact from the dropdown",             "action": "click",    "target_desc": "recipient row in suggestion list",               "param_ref": null},
+    {"intent": "Click the message input field",                             "action": "click",    "target_desc": "message input bar at the bottom of the chat",    "param_ref": null},
+    {"intent": "Type the message content",                                  "action": "type",     "target_desc": "message input bar",                              "param_ref": "message_text"},
+    {"intent": "Attach a media item or link if provided",                   "action": "click",    "target_desc": "image or attachment icon in chat toolbar",       "param_ref": "attachment_url"},
+    {"intent": "Send the message",                                          "action": "press_key","target_desc": "Enter key or Send arrow button",                  "param_ref": null}
+  ],
+  "success_checks": [
+    "Message bubble appears in the chat thread",
+    "'Sent' status shown below the message",
+    "No error banner is displayed"
+  ],
+  "embedding": [],
+  "stats": {"uses": 5, "successes": 5, "failures": 0, "success_rate": 1.0, "avg_steps": 8.0},
+  "version": 1,
+  "status": "active"
+}

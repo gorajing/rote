@@ -1,0 +1,38 @@
+{
+  "name": "create_photo_collage_photoshop",
+  "site": "adobe",
+  "goal_template": "Create a {photo_count}-photo collage in Adobe Photoshop at {width}x{height}px, arrange images in a grid with a border colour of {border_color}, and export as {format}",
+  "params": [
+    {"name": "photo_count",   "type": "int", "required": true},
+    {"name": "width",         "type": "int", "required": false},
+    {"name": "height",        "type": "int", "required": false},
+    {"name": "border_color",  "type": "str", "required": false},
+    {"name": "format",        "type": "str", "required": false}
+  ],
+  "preconditions": {
+    "url_pattern": null,
+    "landmarks": ["Photoshop toolbar", "Layers panel", "Properties panel", "Options bar"]
+  },
+  "steps": [
+    {"intent": "Open Photoshop and create a new canvas at the target dimensions",  "action": "click",     "target_desc": "File > New — set width, height, resolution, RGB mode",  "param_ref": "width"},
+    {"intent": "Fill the background layer with the border colour",                 "action": "click",     "target_desc": "Edit > Fill > Color picker",                            "param_ref": "border_color"},
+    {"intent": "Place the first photo as a Smart Object",                          "action": "click",     "target_desc": "File > Place Embedded — select photo file 1",           "param_ref": null},
+    {"intent": "Resize and position photo 1 in its grid cell, then commit",       "action": "press_key", "target_desc": "transform handles drag + Enter to confirm",             "param_ref": null},
+    {"intent": "Repeat Place Embedded for each remaining photo",                   "action": "click",     "target_desc": "File > Place Embedded — repeat for photos 2..N",       "param_ref": "photo_count"},
+    {"intent": "Select all photo layers and distribute them evenly",              "action": "click",     "target_desc": "Align and Distribute buttons in the Options bar",       "param_ref": null},
+    {"intent": "Add a drop shadow layer style to each photo layer",               "action": "click",     "target_desc": "Layer > Layer Style > Drop Shadow",                    "param_ref": null},
+    {"intent": "Add a text label or title if desired",                            "action": "click",     "target_desc": "Type tool (T) — click canvas and type title",          "param_ref": null},
+    {"intent": "Export the final image in the specified format",                   "action": "click",     "target_desc": "File > Export > Export As — choose format and quality", "param_ref": "format"},
+    {"intent": "Save the layered PSD source file",                                "action": "press_key", "target_desc": "Cmd+S / Ctrl+S — save as .psd",                        "param_ref": null}
+  ],
+  "success_checks": [
+    "Exported image file exists at the chosen path in the correct format",
+    "All photos are visible and correctly positioned with even gaps",
+    "Background colour shows as a consistent border between photos",
+    "Layered .psd source file is saved for future edits"
+  ],
+  "embedding": [],
+  "stats": {"uses": 1, "successes": 1, "failures": 0, "success_rate": 1.0, "avg_steps": 9.0},
+  "version": 1,
+  "status": "active"
+}

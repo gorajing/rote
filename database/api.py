@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """
-Rote Database API — query agent instruction files by metadata.
+Rote Database API — load and query Skill objects stored as JSON.
 
-Usage (CLI):
-    python api.py web
-    python api.py web --address amazon
-    python api.py web --purpose buy
-    python api.py web --address facebook --purpose communicate --content
+CLI:
+    python database/api.py web
+    python database/api.py web --address amazon
+    python database/api.py web --purpose buy --skill
+    python database/api.py adobe --purpose generate
 
-Usage (Python):
+Python:
     from database.api import query
-    results = query(platform="web", address="amazon", include_content=True)
+    skills = query(platform="web", address="amazon", load_skill=True)
 """
 import json
 import argparse
+import sys
 from pathlib import Path
 from typing import Optional
+
+# Allow running as `python database/api.py` from the repo root.
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from app.schemas import Skill  # noqa: E402
 
 _DB_DIR = Path(__file__).parent
 _INDEX_PATH = _DB_DIR / "index.json"
@@ -30,33 +35,42 @@ def _load_index() -> list[dict]:
         return json.load(f)["entries"]
 
 
+def _entry_to_skill(entry: dict) -> Skill:
+    data = json.loads((_DATA_DIR / entry["filename"]).read_text(encoding="utf-8"))
+    return Skill(**data)
+
+
 def query(
     platform: str,
     address: Optional[str] = None,
     purpose: Optional[str] = None,
-    include_content: bool = False,
-) -> list[dict]:
+    load_skill: bool = False,
+) -> list[dict | Skill]:
     """
     Search the index and return matching entries.
 
     Args:
-        platform:        Required. One of: web, excel, adobe, apple_email, whatsapp.
-        address:         Optional. Website identifier (e.g. amazon, ebay, facebook, youtube, booking).
-                         Only meaningful when platform is "web".
-        purpose:         Optional. One of: buy, generate, communicate.
-        include_content: If True, each result includes a "content" key with the raw instruction text.
+        platform:   Required. One of: web, excel, adobe, apple_email, whatsapp.
+        address:    Optional. Site identifier (amazon, ebay, facebook, youtube, booking …).
+                    Meaningful only when platform is "web".
+        purpose:    Optional. One of: buy, generate, communicate.
+        load_skill: If True, each result is a fully deserialised Skill dataclass.
+                    If False, each result is a flat dict of index metadata.
 
     Returns:
-        List of matching entry dicts. Each dict contains all index metadata;
-        if include_content is True, a "content" key is added.
+        List of index-metadata dicts, or Skill objects when load_skill=True.
 
     Raises:
-        ValueError: if platform or purpose are not valid known values.
+        ValueError: on invalid platform or purpose values.
     """
     if platform not in VALID_PLATFORMS:
-        raise ValueError(f"Invalid platform '{platform}'. Must be one of: {', '.join(sorted(VALID_PLATFORMS))}")
+        raise ValueError(
+            f"Invalid platform '{platform}'. Choose from: {', '.join(sorted(VALID_PLATFORMS))}"
+        )
     if purpose is not None and purpose not in VALID_PURPOSES:
-        raise ValueError(f"Invalid purpose '{purpose}'. Must be one of: {', '.join(sorted(VALID_PURPOSES))}")
+        raise ValueError(
+            f"Invalid purpose '{purpose}'. Choose from: {', '.join(sorted(VALID_PURPOSES))}"
+        )
 
     results = []
     for entry in _load_index():
@@ -66,72 +80,63 @@ def query(
             continue
         if purpose is not None and entry["purpose"] != purpose:
             continue
-
-        result = dict(entry)
-        if include_content:
-            result["content"] = (_DATA_DIR / entry["filename"]).read_text(encoding="utf-8")
-
-        results.append(result)
+        results.append(_entry_to_skill(entry) if load_skill else dict(entry))
 
     return results
 
 
-def _print_results(results: list[dict]) -> None:
-    if not results:
-        print("No matching entries found.")
-        return
+# ── CLI ───────────────────────────────────────────────────────────────────────
 
-    print(f"Found {len(results)} matching entr{'y' if len(results) == 1 else 'ies'}:\n")
-    for entry in results:
-        print(f"  ID:               {entry['id']}")
-        print(f"  File:             {entry['filename']}")
-        print(f"  Title:            {entry['title']}")
-        print(f"  Platform:         {entry['platform']}")
-        if entry.get("address"):
-            print(f"  Address:          {entry['address']}")
-        print(f"  Purpose:          {entry['purpose']}")
-        print(f"  Date:             {entry['date']}")
-        print(f"  Last validation:  {entry['last_validation']}")
-        print(f"  Validations:      {entry['validations_count']}")
-        if "content" in entry:
-            print(f"\n  {'─' * 60}")
-            print(entry["content"])
-            print(f"  {'─' * 60}")
-        print()
+def _print_skill(skill: Skill) -> None:
+    print(f"  name:           {skill.name}")
+    print(f"  site:           {skill.site}")
+    print(f"  goal:           {skill.goal_template}")
+    print(f"  params:         {[p['name'] for p in skill.params]}")
+    print(f"  steps:          {len(skill.steps)}")
+    print(f"  status:         {skill.status}  (v{skill.version})")
+    stats = skill.stats
+    print(
+        f"  stats:          {stats['uses']} uses | "
+        f"{stats['successes']} ok | {stats['failures']} fail | "
+        f"{stats['success_rate']:.0%} rate"
+    )
+
+
+def _print_entry(entry: dict) -> None:
+    print(f"  id:             {entry['id']}")
+    print(f"  skill:          {entry['skill_name']}")
+    print(f"  platform:       {entry['platform']}")
+    if entry.get("address"):
+        print(f"  address:        {entry['address']}")
+    print(f"  purpose:        {entry['purpose']}")
+    print(f"  date:           {entry['date']}")
+    print(f"  last_validation:{entry['last_validation']}")
+    print(f"  validations:    {entry['validations_count']}")
+    print(f"  status:         {entry['status']}  (v{entry['version']})")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Query the Rote agent instruction database.",
+        description="Query the Rote Skill database.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python api.py web\n"
-            "  python api.py web --address amazon\n"
-            "  python api.py web --purpose buy --content\n"
-            "  python api.py adobe --purpose generate\n"
+            "  python database/api.py web\n"
+            "  python database/api.py web --address amazon\n"
+            "  python database/api.py web --purpose buy --skill\n"
+            "  python database/api.py adobe --purpose generate\n"
         ),
     )
     parser.add_argument(
         "platform",
-        help=f"Platform to filter on (required). One of: {', '.join(sorted(VALID_PLATFORMS))}",
+        help=f"Required. One of: {', '.join(sorted(VALID_PLATFORMS))}",
     )
+    parser.add_argument("--address", metavar="SITE", help="Site filter (e.g. amazon, ebay, facebook).")
+    parser.add_argument("--purpose", choices=sorted(VALID_PURPOSES), help="Purpose filter.")
     parser.add_argument(
-        "--address",
-        metavar="SITE",
-        help="Website address to filter on (e.g. amazon, ebay, facebook, youtube, booking).",
+        "--skill", action="store_true",
+        help="Deserialise and print full Skill objects instead of index metadata.",
     )
-    parser.add_argument(
-        "--purpose",
-        choices=sorted(VALID_PURPOSES),
-        help="Purpose to filter on.",
-    )
-    parser.add_argument(
-        "--content",
-        action="store_true",
-        help="Include the full instruction text in the output.",
-    )
-
     args = parser.parse_args()
 
     try:
@@ -139,12 +144,23 @@ def main() -> None:
             platform=args.platform,
             address=args.address,
             purpose=args.purpose,
-            include_content=args.content,
+            load_skill=args.skill,
         )
     except ValueError as exc:
         parser.error(str(exc))
 
-    _print_results(results)
+    if not results:
+        print("No matching entries found.")
+        return
+
+    noun = "Skill" if args.skill else "entry"
+    print(f"Found {len(results)} matching {noun}{'s' if len(results) != 1 else ''}:\n")
+    for item in results:
+        if isinstance(item, Skill):
+            _print_skill(item)
+        else:
+            _print_entry(item)
+        print()
 
 
 if __name__ == "__main__":

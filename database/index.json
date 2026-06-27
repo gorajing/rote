@@ -2,113 +2,133 @@
   "entries": [
     {
       "id": "001",
-      "filename": "001.txt",
-      "title": "Buy Headphones on Amazon",
+      "filename": "001.json",
+      "skill_name": "buy_product_amazon",
       "platform": "web",
       "address": "amazon",
       "purpose": "buy",
       "date": "2025-08-10",
       "last_validation": "2026-04-15",
-      "validations_count": 7
+      "validations_count": 7,
+      "status": "active",
+      "version": 1
     },
     {
       "id": "002",
-      "filename": "002.txt",
-      "title": "Buy a Vintage Item on eBay",
+      "filename": "002.json",
+      "skill_name": "buy_vintage_item_ebay",
       "platform": "web",
       "address": "ebay",
       "purpose": "buy",
       "date": "2025-09-22",
       "last_validation": "2026-05-01",
-      "validations_count": 4
+      "validations_count": 4,
+      "status": "active",
+      "version": 1
     },
     {
       "id": "003",
-      "filename": "003.txt",
-      "title": "Create a Monthly Budget Spreadsheet in Excel",
+      "filename": "003.json",
+      "skill_name": "create_budget_spreadsheet_excel",
       "platform": "excel",
       "address": null,
       "purpose": "generate",
       "date": "2025-10-05",
       "last_validation": "2026-03-20",
-      "validations_count": 3
+      "validations_count": 3,
+      "status": "active",
+      "version": 1
     },
     {
       "id": "004",
-      "filename": "004.txt",
-      "title": "Send a WhatsApp Message to a Contact",
+      "filename": "004.json",
+      "skill_name": "send_whatsapp_message",
       "platform": "whatsapp",
       "address": null,
       "purpose": "communicate",
       "date": "2025-11-12",
       "last_validation": "2026-06-01",
-      "validations_count": 9
+      "validations_count": 9,
+      "status": "active",
+      "version": 1
     },
     {
       "id": "005",
-      "filename": "005.txt",
-      "title": "Compose and Send an Email via Apple Mail",
+      "filename": "005.json",
+      "skill_name": "send_email_apple_mail",
       "platform": "apple_email",
       "address": null,
       "purpose": "communicate",
       "date": "2025-07-30",
       "last_validation": "2026-02-14",
-      "validations_count": 6
+      "validations_count": 6,
+      "status": "active",
+      "version": 1
     },
     {
       "id": "006",
-      "filename": "006.txt",
-      "title": "Create a PDF Document in Adobe Acrobat",
+      "filename": "006.json",
+      "skill_name": "create_pdf_adobe_acrobat",
       "platform": "adobe",
       "address": null,
       "purpose": "generate",
       "date": "2025-12-01",
       "last_validation": "2026-05-20",
-      "validations_count": 2
+      "validations_count": 2,
+      "status": "active",
+      "version": 1
     },
     {
       "id": "007",
-      "filename": "007.txt",
-      "title": "Send a Direct Message to a Friend on Facebook",
+      "filename": "007.json",
+      "skill_name": "send_facebook_dm",
       "platform": "web",
       "address": "facebook",
       "purpose": "communicate",
       "date": "2026-01-08",
       "last_validation": "2026-06-10",
-      "validations_count": 5
+      "validations_count": 5,
+      "status": "active",
+      "version": 1
     },
     {
       "id": "008",
-      "filename": "008.txt",
-      "title": "Book a Hotel on Booking.com",
+      "filename": "008.json",
+      "skill_name": "book_hotel_booking_com",
       "platform": "web",
       "address": "booking",
       "purpose": "buy",
       "date": "2025-06-15",
       "last_validation": "2026-04-28",
-      "validations_count": 8
+      "validations_count": 8,
+      "status": "active",
+      "version": 1
     },
     {
       "id": "009",
-      "filename": "009.txt",
-      "title": "Subscribe to YouTube Premium",
+      "filename": "009.json",
+      "skill_name": "subscribe_youtube_premium",
       "platform": "web",
       "address": "youtube",
       "purpose": "buy",
       "date": "2026-02-19",
       "last_validation": "2026-06-20",
-      "validations_count": 3
+      "validations_count": 3,
+      "status": "active",
+      "version": 1
     },
     {
       "id": "010",
-      "filename": "010.txt",
-      "title": "Create a Photo Collage in Adobe Photoshop",
+      "filename": "010.json",
+      "skill_name": "create_photo_collage_photoshop",
       "platform": "adobe",
       "address": null,
       "purpose": "generate",
       "date": "2026-03-05",
       "last_validation": "2026-06-15",
-      "validations_count": 1
+      "validations_count": 1,
+      "status": "active",
+      "version": 1
     }
   ]
 }
