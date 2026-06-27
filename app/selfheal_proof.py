@@ -1,14 +1,18 @@
-"""Self-heal proof on the STRUCTURAL mutation (move_dispute_to_cases).
+"""Two-tier self-heal proof on the hardened arena.
 
-Learn a skill on baseline (verify it replays at 0 CU), then replay it on the mutated arena
-where disputing is moved out of the row menu into a separate Cases flow. Cached crops for the
-changed steps MISS → each escalates ONE step to CU (re-ground + patch in place). This measures
-how far single-step self-heal carries a multi-step structural change, and whether the
-deterministic checker still passes.
+Tier 0  baseline replay ................. 0 CU, PASS        (amortized)
+Tier 1  relabel_export (cosmetic) ....... heal, PASS        (heals shallow drift for free)
+Tier 2  move_dispute_to_cases (struct) .. cheap-heal FAIL   (checker refuses the half-heal)
+        -> recompile on the new UI ...... 0 CU, PASS        (re-amortized, never a fake win)
+
+Uses a GOAL-oriented intent + max_turns=30 (structural flows run long). Tier 1 auto-skips if
+the relabel_export variant isn't in the arena yet.
 
   python -m app.selfheal_proof
 """
+import copy
 import requests
+from dataclasses import replace
 from playwright.sync_api import sync_playwright
 
 from .config import APP_URL, VIEWPORT
@@ -17,57 +21,88 @@ from .skill_compiler import compile_skill
 from .replay_engine import replay_skill
 from .tasks import HERO
 from . import checker
+from .controlled_app import state as arena_state
+
+GOAL = replace(HERO, intent=(
+    "This is a local QA billing app you own at localhost (no real money or accounts). "
+    "Dispute the unpaid Acme Corp invoice for over $500, choosing the reason 'Duplicate charge'. "
+    "Then add the note 'duplicate charge' to that same invoice and export its receipt."))
 
 MAX_COLD = 4
+TURNS = 30
 
 
 def _reset(variant: str) -> None:
     requests.post(f"{APP_URL}/reset?variant={variant}", timeout=5)
 
 
-def _learn(page):
-    """Cold-run the hero on baseline until one checker-verified success, then compile."""
+def _learn(page, variant: str, label: str):
+    """Cold-run the goal intent on `variant` until one checker-verified success, then compile."""
     for attempt in range(1, MAX_COLD + 1):
-        _reset("baseline")
+        _reset(variant)
         page.goto(f"{APP_URL}/billing", wait_until="domcontentloaded")
-        t = run_task(HERO, page); t.success = checker.check(HERO)
-        print(f"  cold attempt {attempt}: {t.n_steps} steps, {'PASS' if t.success else 'FAIL'}")
+        t = run_task(GOAL, page, max_turns=TURNS); t.success = checker.check(GOAL)
+        print(f"  [{label}] cold {attempt}: {t.n_steps} steps, {'PASS' if t.success else 'FAIL'}", flush=True)
         if t.success:
             return compile_skill(t)
-    raise SystemExit("no verified cold success to learn from")
+    return None
+
+
+def _replay(page, skill, variant: str, heal: bool):
+    _reset(variant)
+    page.goto(f"{APP_URL}/billing", wait_until="domcontentloaded")
+    res = replay_skill(skill, page, verbose=True, heal=heal)
+    return res, checker.check(GOAL)
 
 
 def main():
+    has_cosmetic = "relabel_export" in arena_state.VARIANTS
+    rows = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        page = browser.new_context(viewport={"width": VIEWPORT[0], "height": VIEWPORT[1]}).new_page()
+        b = p.chromium.launch(headless=False)
+        page = b.new_context(viewport={"width": VIEWPORT[0], "height": VIEWPORT[1]}).new_page()
 
-        print("LEARN on baseline:")
-        skill = _learn(page)
-        print(f"  compiled {len(skill.steps)} steps, "
+        print("LEARN skill on baseline:")
+        skill = _learn(page, "baseline", "learn")
+        if skill is None:
+            raise SystemExit("could not learn a baseline skill")
+        print(f"  -> {len(skill.steps)} steps, "
               f"{sum(1 for s in skill.steps if s.get('crop_b64'))} crops\n")
 
-        print("REPLAY on baseline (sanity → expect 0 CU):")
-        _reset("baseline"); page.goto(f"{APP_URL}/billing", wait_until="domcontentloaded")
-        r1 = replay_skill(skill, page, verbose=True, heal=False)
-        ok1 = checker.check(HERO)
-        print(f"  → CU {r1['cu_calls']}, checker {'PASS' if ok1 else 'FAIL'}\n")
+        print("TIER 0  baseline replay (expect 0 CU):")
+        r, ok = _replay(page, skill, "baseline", heal=False)
+        rows.append(("baseline replay", r["cu_calls"], ok))
+        print(f"  -> {r['cu_calls']} CU, {'PASS' if ok else 'FAIL'}\n")
 
-        print("REPLAY on move_dispute_to_cases (STRUCTURAL → expect misses + heal):")
-        _reset("move_dispute_to_cases"); page.goto(f"{APP_URL}/billing", wait_until="domcontentloaded")
-        r2 = replay_skill(skill, page, verbose=True, heal=True)
-        ok2 = checker.check(HERO)
-        print(f"  → CU {r2['cu_calls']} (escalations {len(r2['escalations'])}), "
-              f"checker {'PASS' if ok2 else 'FAIL'}")
-        browser.close()
+        if has_cosmetic:
+            print("TIER 1  relabel_export (cosmetic) replay + heal (expect heal, PASS):")
+            r, ok = _replay(page, copy.deepcopy(skill), "relabel_export", heal=True)
+            rows.append(("cosmetic cheap-heal", r["cu_calls"], ok))
+            print(f"  -> {r['cu_calls']} CU (escalations {len(r['escalations'])}), {'PASS' if ok else 'FAIL'}\n")
+        else:
+            print("TIER 1  relabel_export not in arena — SKIPPED (ask ikjun to add it)\n")
 
-    print("\n=== SELF-HEAL SUMMARY ===")
-    print(f"baseline replay:           {r1['cu_calls']} CU over {len(skill.steps)} steps, "
-          f"{'PASS' if ok1 else 'FAIL'}")
-    print(f"structural replay (heal):  {r2['cu_calls']} CU over {len(skill.steps)} steps, "
-          f"{'PASS' if ok2 else 'FAIL'}")
-    if r2["escalations"]:
-        print("escalated steps:", [e["step"] + 1 for e in r2["escalations"]])
+        print("TIER 2  move_dispute_to_cases (structural) replay + heal (expect FAIL):")
+        r, ok = _replay(page, copy.deepcopy(skill), "move_dispute_to_cases", heal=True)
+        rows.append(("structural cheap-heal", r["cu_calls"], ok))
+        print(f"  -> {r['cu_calls']} CU (escalations {len(r['escalations'])}), {'PASS' if ok else 'FAIL'}")
+
+        if not ok:
+            print("\n  checker REFUSED the half-heal -> RECOMPILE on move_dispute_to_cases:")
+            skill2 = _learn(page, "move_dispute_to_cases", "recompile")
+            if skill2 is None:
+                print("  recompile could not learn a structural skill")
+                rows.append(("structural recompile", "-", False))
+            else:
+                print(f"  -> recompiled {len(skill2.steps)} steps")
+                r3, ok3 = _replay(page, skill2, "move_dispute_to_cases", heal=False)
+                rows.append(("structural recompiled replay", r3["cu_calls"], ok3))
+                print(f"  -> {r3['cu_calls']} CU, {'PASS' if ok3 else 'FAIL'}")
+        b.close()
+
+    print("\n=== TWO-TIER SELF-HEAL SUMMARY ===")
+    for name, cu, ok in rows:
+        print(f"  {name:<32} {str(cu):>3} CU   {'PASS' if ok else 'FAIL'}")
 
 
 if __name__ == "__main__":

@@ -38,9 +38,10 @@ def _skill_hint(skills) -> str:
     return "\n".join(lines) + "\n\nGOAL: "
 
 
-def run_task(task: Task, page, skills=None, out_dir=TRACES_DIR) -> Trajectory:
+def run_task(task: Task, page, skills=None, out_dir=TRACES_DIR, max_turns: int = MAX_TURNS) -> Trajectory:
     """Drive Gemini CU through one task on `page`; return the annotated Trajectory.
-    Success is NOT decided here — the deterministic checker fills traj.success afterward."""
+    Success is NOT decided here — the deterministic checker fills traj.success afterward.
+    `max_turns` overrides the global cap — longer structural flows need more actions."""
     traj = Trajectory(task_id=task.id, used_skill=(skills[0].name if skills else None))
     prompt = _skill_hint(skills) + task.intent
 
@@ -55,7 +56,7 @@ def run_task(task: Task, page, skills=None, out_dir=TRACES_DIR) -> Trajectory:
     )
 
     recent = []
-    for turn in range(1, MAX_TURNS + 1):
+    for turn in range(1, max_turns + 1):
         calls = [s for s in interaction.steps if s.type == "function_call"]
         if not calls:                                   # model is done
             traj.final_text = " ".join(
