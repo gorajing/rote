@@ -1,0 +1,53 @@
+{
+  "task_id": "fixture-dispute-001",
+  "steps": [
+    {
+      "turn": 1,
+      "intent": "Click the 'Dispute' button on the Acme Corp invoice row.",
+      "action": "click",
+      "args": { "x": 612, "y": 318, "intent": "Click the 'Dispute' button on the Acme Corp invoice row." },
+      "coords": [783, 229],
+      "screenshot_path": "traces/fixture-dispute-001_t1.png",
+      "url": "http://localhost:8800/billing"
+    },
+    {
+      "turn": 2,
+      "intent": "Click the note input field on the Acme Corp invoice row.",
+      "action": "click",
+      "args": { "x": 690, "y": 318, "intent": "Click the note input field on the Acme Corp invoice row." },
+      "coords": [883, 229],
+      "screenshot_path": "traces/fixture-dispute-001_t2.png",
+      "url": "http://localhost:8800/billing"
+    },
+    {
+      "turn": 3,
+      "intent": "Type the dispute reason 'duplicate charge' into the note field.",
+      "action": "type",
+      "args": { "text": "duplicate charge", "press_enter": false, "intent": "Type the dispute reason 'duplicate charge' into the note field." },
+      "coords": null,
+      "screenshot_path": "traces/fixture-dispute-001_t3.png",
+      "url": "http://localhost:8800/billing"
+    },
+    {
+      "turn": 4,
+      "intent": "Click 'Save' to attach the note to the invoice.",
+      "action": "click",
+      "args": { "x": 735, "y": 318, "intent": "Click 'Save' to attach the note to the invoice." },
+      "coords": [941, 229],
+      "screenshot_path": "traces/fixture-dispute-001_t4.png",
+      "url": "http://localhost:8800/billing"
+    },
+    {
+      "turn": 5,
+      "intent": "Click 'Export' to export the receipt for the Acme Corp invoice.",
+      "action": "click",
+      "args": { "x": 820, "y": 318, "intent": "Click 'Export' to export the receipt for the Acme Corp invoice." },
+      "coords": [1050, 229],
+      "screenshot_path": "traces/fixture-dispute-001_t5.png",
+      "url": "http://localhost:8800/billing"
+    }
+  ],
+  "final_text": "The unpaid invoice from Acme Corp has been marked as disputed, the note 'duplicate charge' was added, and the receipt was exported.",
+  "success": true,
+  "used_skill": null
+}
