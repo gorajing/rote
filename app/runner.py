@@ -18,12 +18,25 @@ from .schemas import Task
 from .cu_runner import run_task
 
 
+def _goto(page, url, attempts: int = 3):
+    """Robust navigation: wait for DOM (not full 'load'), and retry the transient
+    'interrupted by another navigation to about:blank' race that can hit headful goto."""
+    for i in range(attempts):
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            return
+        except Exception as e:
+            if "interrupted by another navigation" in str(e) and i < attempts - 1:
+                continue
+            raise
+
+
 def drive(task: Task, start_url: str, skills=None, headless: bool = False):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
         ctx = browser.new_context(viewport={"width": VIEWPORT[0], "height": VIEWPORT[1]})
         page = ctx.new_page()
-        page.goto(start_url)
+        _goto(page, start_url)
         traj = run_task(task, page, skills=skills)
         browser.close()
     return traj
