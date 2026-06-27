@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1280">
+  <title>{% block title %}AcmeBilling{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="logo">A</span>
+        <span>AcmeBilling</span>
+      </div>
+      <nav class="side-nav">
+        <a href="{{ url_for('billing') }}" id="nav-invoices"
+           class="{% if active_nav == 'invoices' %}active{% endif %}">
+          <span class="ic">&#9776;</span> {{ nav_label | default('Invoices') }}
+        </a>
+        <a href="{{ url_for('settings_page') }}" id="nav-settings"
+           class="{% if active_nav == 'settings' %}active{% endif %}">
+          <span class="ic">&#9881;</span> Settings
+        </a>
+      </nav>
+      <div class="side-foot">
+        Workspace: Acme Corp
+        <br>
+        <span class="variant-badge">layout: {{ variant | default('baseline') }}</span>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div>
+          <h2>{% block page_title %}{% endblock %}</h2>
+          {% block page_sub %}{% endblock %}
+        </div>
+        <div class="user">
+          <span>admin@acme.com</span>
+          <span class="avatar">AC</span>
+        </div>
+      </header>
+
+      <div class="content">
+        {% if flash %}
+        <div class="flash" id="flash-message">{{ flash }}</div>
+        {% endif %}
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

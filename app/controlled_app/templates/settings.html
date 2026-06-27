@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}AcmeBilling — Settings{% endblock %}
+{% block page_title %}Settings{% endblock %}
+{% block page_sub %}<div class="sub">Billing preferences for your workspace</div>{% endblock %}
+
+{% block content %}
+  <div class="form-card">
+    <form action="{{ url_for('settings_page') }}" method="POST">
+      <div class="check-row">
+        <input type="checkbox" id="notifications-input" name="notifications"
+               {% if settings.notifications %}checked{% endif %}>
+        <label for="notifications-input">Email notifications</label>
+      </div>
+
+      <div class="field">
+        <label for="email-input">Billing email</label>
+        <input type="text" id="email-input" name="billing_email"
+               value="{{ settings.billing_email }}" autocomplete="off">
+      </div>
+
+      <div class="field">
+        <label for="plan-select">Plan</label>
+        <select id="plan-select" name="plan">
+          <option value="free" {% if settings.plan == 'free' %}selected{% endif %}>Free</option>
+          <option value="pro" {% if settings.plan == 'pro' %}selected{% endif %}>Pro</option>
+          <option value="enterprise" {% if settings.plan == 'enterprise' %}selected{% endif %}>Enterprise</option>
+        </select>
+      </div>
+
+      <button type="submit" class="btn btn-primary" id="btn-save-settings">Save Settings</button>
+    </form>
+  </div>
+{% endblock %}
