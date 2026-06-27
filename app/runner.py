@@ -18,6 +18,7 @@ from .schemas import Task
 from .cu_runner import run_task
 from .trace import save_trajectory
 from . import checker
+from .tasks import HERO
 
 
 def _goto(page, url, attempts: int = 3):
@@ -62,24 +63,16 @@ def run_episode(task: Task, start_url: str, checker=None, skills=None,
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default=f"{APP_URL}/billing")
-    ap.add_argument("--intent",
-                    default="Find the unpaid invoice from Acme Corp, mark it disputed, "
-                            "add the note 'duplicate charge', then export the receipt.")
+    ap.add_argument("--intent", default=HERO.intent)
     ap.add_argument("--headless", action="store_true")
     args = ap.parse_args()
 
     task = Task(id="smoke-1", site="billing", intent=args.intent,
-                params={"customer": "Acme Corp", "note": "duplicate charge"},
-                checker="dispute_workflow", family="invoice_action")
+                params=dict(HERO.params),
+                checker=HERO.checker, family=HERO.family)
 
-    traj, path = run_episode(task, args.url, headless=args.headless)
-
-    if args.url.startswith(APP_URL):
-        try:
-            traj.success = checker.check(task)
-        except Exception as e:
-            print(f"\nChecker error: {e}")
-            traj.success = False
+    traj, path = run_episode(task, args.url, checker=checker.check if args.url.startswith(APP_URL) else None,
+                             headless=args.headless)
 
     print(f"\n=== Trajectory: {traj.n_steps} steps, used_skill={traj.used_skill} ===")
     for s in traj.steps:

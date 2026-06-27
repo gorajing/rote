@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Dispute Case — {{ invoice.id }}{% endblock %}
+{% block page_title %}Cases — Open Dispute{% endblock %}
+{% block page_sub %}<div class="sub">Dispute case panel for {{ invoice.id }}</div>{% endblock %}
+
+{% block content %}
+  <div class="form-card cases-panel">
+    <div class="form-context">
+      Opening a dispute case for <strong>{{ invoice.customer }}</strong>
+      ({{ invoice.id }}, ${{ "{:,.2f}".format(invoice.amount) }}).
+      Dispute is no longer available from the row menu — confirm here.
+    </div>
+    <form action="{{ url_for('case_dispute', invoice_id=invoice.id) }}" method="POST">
+      <div class="field">
+        <label for="case-reason-select">Case reason</label>
+        <select id="case-reason-select" name="reason" required>
+          <option value="">— Select reason —</option>
+          {% for r in reasons %}
+          <option value="{{ r }}">{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary" id="btn-confirm-case">Confirm case</button>
+      <a href="{{ url_for('billing') }}" class="btn btn-refund" style="margin-left:8px">Cancel</a>
+    </form>
+  </div>
+{% endblock %}

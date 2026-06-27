@@ -142,7 +142,7 @@ def _compile_successes(train_report: dict) -> None:
             pass  # B would load trajectory from traces/ and compile+store
 
 
-def run_repair_eval(variant: str = "rename_export", headless: bool = False) -> dict:
+def run_repair_eval(variant: str = "move_dispute_to_cases", headless: bool = False) -> dict:
     """Measure naive replay failure then repair recovery on a mutated UI."""
     naive = run_eval("heldout", use_skills=True, variant=variant, headless=headless)
 
