@@ -8,7 +8,7 @@ import json
 from google import genai
 
 from .config import (CU_MODEL, LEGACY_CU_MODEL, USE_LEGACY_CU,
-                     MAX_TURNS, STUCK_AFTER)
+                     MAX_TURNS, STUCK_AFTER, TRACES_DIR)
 from .schemas import Task, Trajectory
 from .executor import execute_action
 from .trace import screenshot_b64, save_screenshot, state_hash, record_step
@@ -38,7 +38,7 @@ def _skill_hint(skills) -> str:
     return "\n".join(lines) + "\n\nGOAL: "
 
 
-def run_task(task: Task, page, skills=None, out_dir="traces") -> Trajectory:
+def run_task(task: Task, page, skills=None, out_dir=TRACES_DIR) -> Trajectory:
     """Drive Gemini CU through one task on `page`; return the annotated Trajectory.
     Success is NOT decided here — the deterministic checker fills traj.success afterward."""
     traj = Trajectory(task_id=task.id, used_skill=(skills[0].name if skills else None))

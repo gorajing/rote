@@ -13,7 +13,7 @@ through cu_runner. This is the smoke test that proves the loop works end-to-end.
 import argparse
 from playwright.sync_api import sync_playwright
 
-from .config import VIEWPORT, APP_URL
+from .config import VIEWPORT, APP_URL, TRACES_DIR
 from .schemas import Task
 from .cu_runner import run_task
 from .trace import save_trajectory
@@ -44,7 +44,7 @@ def drive(task: Task, start_url: str, skills=None, headless: bool = False):
 
 
 def run_episode(task: Task, start_url: str, checker=None, skills=None,
-                headless: bool = False, out_dir: str = "traces"):
+                headless: bool = False, out_dir: str = TRACES_DIR):
     """One full episode: drive the task, optionally score it with C's deterministic
     checker, and persist the trajectory. Returns (trajectory, saved_path).
 

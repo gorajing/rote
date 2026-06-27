@@ -17,6 +17,9 @@ VIEWPORT = (1280, 720)        # LOCK this; coords return normalized 0-999 -> den
 MAX_TURNS = 18                # circuit breaker: hard cap on steps per task
 STUCK_AFTER = 3               # abort if screenshot+url hash is unchanged this many turns
 
+# --- artifacts (repo-rooted so trajectories + screenshots land in the repo, not the CWD) ---
+TRACES_DIR = str(Path(__file__).resolve().parent.parent / "traces")
+
 # --- controlled arena (AcmeBilling) ---
 APP_URL = os.getenv("ROTE_APP_URL", "http://localhost:8800")
 

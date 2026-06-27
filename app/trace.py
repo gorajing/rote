@@ -8,7 +8,7 @@ import base64
 import hashlib
 from dataclasses import asdict
 from .schemas import Step, Trajectory
-from .config import VIEWPORT
+from .config import VIEWPORT, TRACES_DIR
 
 
 def screenshot_b64(page) -> str:
@@ -43,7 +43,7 @@ def record_step(traj: Trajectory, turn: int, fname: str, args: dict, page, scree
     ))
 
 
-def save_trajectory(traj: Trajectory, out_dir: str = "traces") -> str:
+def save_trajectory(traj: Trajectory, out_dir: str = TRACES_DIR) -> str:
     """Persist a Trajectory as JSON — the artifact B's compiler reads and D's replay reuses."""
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f"{traj.task_id}.json")
