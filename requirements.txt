@@ -1,0 +1,5 @@
+google-genai>=2.7.0
+playwright>=1.49
+flask>=3.0
+requests>=2.31
+pymongo>=4.8
