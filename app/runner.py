@@ -1,0 +1,50 @@
+"""Runnable entry for the CU engine: owns the Playwright lifecycle and drives one Task
+through cu_runner. This is the smoke test that proves the loop works end-to-end.
+
+  pip install -r requirements.txt && playwright install chromium
+  export GEMINI_API_KEY=...
+
+  # validate the loop against a public page first (no controlled app needed yet):
+  python -m app.runner --url https://www.google.com --intent "Search for 'Gemini API'."
+
+  # once Owner C's controlled app is up, drive the real hero workflow (the default):
+  python -m app.runner
+"""
+import argparse
+from playwright.sync_api import sync_playwright
+
+from .config import VIEWPORT, APP_URL
+from .schemas import Task
+from .cu_runner import run_task
+
+
+def drive(task: Task, start_url: str, skills=None, headless: bool = False):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=headless)
+        ctx = browser.new_context(viewport={"width": VIEWPORT[0], "height": VIEWPORT[1]})
+        page = ctx.new_page()
+        page.goto(start_url)
+        traj = run_task(task, page, skills=skills)
+        browser.close()
+    return traj
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--url", default=f"{APP_URL}/billing")
+    ap.add_argument("--intent",
+                    default="Find the unpaid invoice from Acme Corp, mark it disputed, "
+                            "add the note 'duplicate charge', then export the receipt.")
+    ap.add_argument("--headless", action="store_true")
+    args = ap.parse_args()
+
+    task = Task(id="smoke-1", site="billing", intent=args.intent,
+                params={"customer": "Acme Corp", "note": "duplicate charge"},
+                checker="dispute_workflow", family="invoice_action")
+
+    traj = drive(task, args.url, headless=args.headless)
+
+    print(f"\n=== Trajectory: {traj.n_steps} steps, used_skill={traj.used_skill} ===")
+    for s in traj.steps:
+        print(f"  [{s.turn:>2}] {s.action:<14} @ {str(s.coords):<12} — {s.intent}")
+    print(f"final: {traj.final_text}")
