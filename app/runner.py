@@ -16,6 +16,7 @@ from playwright.sync_api import sync_playwright
 from .config import VIEWPORT, APP_URL
 from .schemas import Task
 from .cu_runner import run_task
+from .trace import save_trajectory
 
 
 def _goto(page, url, attempts: int = 3):
@@ -42,6 +43,21 @@ def drive(task: Task, start_url: str, skills=None, headless: bool = False):
     return traj
 
 
+def run_episode(task: Task, start_url: str, checker=None, skills=None,
+                headless: bool = False, out_dir: str = "traces"):
+    """One full episode: drive the task, optionally score it with C's deterministic
+    checker, and persist the trajectory. Returns (trajectory, saved_path).
+
+    `checker` is any callable check(task) -> bool — pass C's check_task once it lands;
+    until then the episode still runs and the trajectory is saved (success stays None).
+    This is the loop H6 and the eval harness both run on."""
+    traj = drive(task, start_url, skills=skills, headless=headless)
+    if checker is not None:
+        traj.success = checker(task)
+    path = save_trajectory(traj, out_dir)
+    return traj, path
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default=f"{APP_URL}/billing")
@@ -55,9 +71,10 @@ if __name__ == "__main__":
                 params={"customer": "Acme Corp", "note": "duplicate charge"},
                 checker="dispute_workflow", family="invoice_action")
 
-    traj = drive(task, args.url, headless=args.headless)
+    traj, path = run_episode(task, args.url, headless=args.headless)
 
     print(f"\n=== Trajectory: {traj.n_steps} steps, used_skill={traj.used_skill} ===")
     for s in traj.steps:
         print(f"  [{s.turn:>2}] {s.action:<14} @ {str(s.coords):<12} — {s.intent}")
     print(f"final: {traj.final_text}")
+    print(f"saved: {path}   (B can compile a skill from this; D can replay it)")

@@ -3,8 +3,10 @@ pixel action (intent + action + coords + screenshot). Observation, eval, judging
 improvement are all pure functions of this trace. The `intent` field (Gemini 3.5 only) is
 what turns raw coordinates into a semantic, re-groundable record."""
 import os
+import json
 import base64
 import hashlib
+from dataclasses import asdict
 from .schemas import Step, Trajectory
 from .config import VIEWPORT
 
@@ -39,3 +41,28 @@ def record_step(traj: Trajectory, turn: int, fname: str, args: dict, page, scree
         screenshot_path=screenshot_path,
         url=page.url,
     ))
+
+
+def save_trajectory(traj: Trajectory, out_dir: str = "traces") -> str:
+    """Persist a Trajectory as JSON — the artifact B's compiler reads and D's replay reuses."""
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"{traj.task_id}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(asdict(traj), f, indent=2)
+    return path
+
+
+def load_trajectory(path: str) -> Trajectory:
+    """Rehydrate a Trajectory from JSON (coords come back as tuples)."""
+    with open(path, encoding="utf-8") as f:
+        d = json.load(f)
+    steps = []
+    for s in d["steps"]:
+        s = dict(s)
+        if s.get("coords") is not None:
+            s["coords"] = tuple(s["coords"])
+        steps.append(Step(**s))
+    return Trajectory(
+        task_id=d["task_id"], steps=steps, final_text=d.get("final_text"),
+        success=d.get("success"), used_skill=d.get("used_skill"),
+    )
