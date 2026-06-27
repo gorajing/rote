@@ -1,0 +1,114 @@
+{
+  "entries": [
+    {
+      "id": "001",
+      "filename": "001.txt",
+      "title": "Buy Headphones on Amazon",
+      "platform": "web",
+      "address": "amazon",
+      "purpose": "buy",
+      "date": "2025-08-10",
+      "last_validation": "2026-04-15",
+      "validations_count": 7
+    },
+    {
+      "id": "002",
+      "filename": "002.txt",
+      "title": "Buy a Vintage Item on eBay",
+      "platform": "web",
+      "address": "ebay",
+      "purpose": "buy",
+      "date": "2025-09-22",
+      "last_validation": "2026-05-01",
+      "validations_count": 4
+    },
+    {
+      "id": "003",
+      "filename": "003.txt",
+      "title": "Create a Monthly Budget Spreadsheet in Excel",
+      "platform": "excel",
+      "address": null,
+      "purpose": "generate",
+      "date": "2025-10-05",
+      "last_validation": "2026-03-20",
+      "validations_count": 3
+    },
+    {
+      "id": "004",
+      "filename": "004.txt",
+      "title": "Send a WhatsApp Message to a Contact",
+      "platform": "whatsapp",
+      "address": null,
+      "purpose": "communicate",
+      "date": "2025-11-12",
+      "last_validation": "2026-06-01",
+      "validations_count": 9
+    },
+    {
+      "id": "005",
+      "filename": "005.txt",
+      "title": "Compose and Send an Email via Apple Mail",
+      "platform": "apple_email",
+      "address": null,
+      "purpose": "communicate",
+      "date": "2025-07-30",
+      "last_validation": "2026-02-14",
+      "validations_count": 6
+    },
+    {
+      "id": "006",
+      "filename": "006.txt",
+      "title": "Create a PDF Document in Adobe Acrobat",
+      "platform": "adobe",
+      "address": null,
+      "purpose": "generate",
+      "date": "2025-12-01",
+      "last_validation": "2026-05-20",
+      "validations_count": 2
+    },
+    {
+      "id": "007",
+      "filename": "007.txt",
+      "title": "Send a Direct Message to a Friend on Facebook",
+      "platform": "web",
+      "address": "facebook",
+      "purpose": "communicate",
+      "date": "2026-01-08",
+      "last_validation": "2026-06-10",
+      "validations_count": 5
+    },
+    {
+      "id": "008",
+      "filename": "008.txt",
+      "title": "Book a Hotel on Booking.com",
+      "platform": "web",
+      "address": "booking",
+      "purpose": "buy",
+      "date": "2025-06-15",
+      "last_validation": "2026-04-28",
+      "validations_count": 8
+    },
+    {
+      "id": "009",
+      "filename": "009.txt",
+      "title": "Subscribe to YouTube Premium",
+      "platform": "web",
+      "address": "youtube",
+      "purpose": "buy",
+      "date": "2026-02-19",
+      "last_validation": "2026-06-20",
+      "validations_count": 3
+    },
+    {
+      "id": "010",
+      "filename": "010.txt",
+      "title": "Create a Photo Collage in Adobe Photoshop",
+      "platform": "adobe",
+      "address": null,
+      "purpose": "generate",
+      "date": "2026-03-05",
+      "last_validation": "2026-06-15",
+      "validations_count": 1
+    }
+  ]
+}

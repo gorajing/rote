@@ -1,0 +1,41 @@
+TASK: Create a Monthly Budget Spreadsheet in Excel
+PLATFORM: Microsoft Excel (desktop or web)
+
+Step 1: Open Microsoft Excel. Create a new blank workbook.
+Step 2: Rename the default sheet to "Budget" by double-clicking the tab.
+Step 3: In cell A1, type the title: "Monthly Budget — [Month Year]".
+Step 4: Set up the Income section starting at row 3:
+   - A3: "INCOME"  (bold, filled with a light-green background)
+   - A4: "Salary"        B4: [amount]
+   - A5: "Freelance"     B5: [amount]
+   - A6: "Other Income"  B6: [amount]
+   - A7: "Total Income"  B7: =SUM(B4:B6)  (bold)
+
+Step 5: Leave row 8 blank, then set up the Expenses section starting at row 9:
+   - A9: "EXPENSES"  (bold, filled with a light-red background)
+   - A10: "Rent / Mortgage"   B10: [amount]
+   - A11: "Utilities"         B11: [amount]
+   - A12: "Groceries"         B12: [amount]
+   - A13: "Transport"         B13: [amount]
+   - A14: "Subscriptions"     B14: [amount]
+   - A15: "Entertainment"     B15: [amount]
+   - A16: "Other Expenses"    B16: [amount]
+   - A17: "Total Expenses"    B17: =SUM(B10:B16)  (bold)
+
+Step 6: Leave row 18 blank, then add the Summary section:
+   - A19: "NET SAVINGS"   B19: =B7-B17  (bold, large font)
+
+Step 7: Format column B as Currency:
+   - Select B4:B19, right-click > Format Cells > Currency, 2 decimal places.
+
+Step 8: Add a simple bar chart:
+   - Select A4:B6 (income items), hold Ctrl, then also select A10:B16 (expense items).
+   - Insert > Chart > Bar chart > Clustered Bar.
+   - Title the chart "Income vs. Expenses".
+
+Step 9: Freeze the top row: View > Freeze Panes > Freeze Top Row.
+Step 10: Save the file as "Budget_[MonthYear].xlsx".
+
+NOTES:
+- Colour-code cells: green for positive net savings, red for negative (use Conditional Formatting on B19).
+- Duplicate the sheet monthly and update only the amounts; formulas carry over.

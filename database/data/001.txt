@@ -1,0 +1,27 @@
+TASK: Buy Headphones on Amazon
+PLATFORM: Web — amazon.com
+
+Step 1: Open your browser and navigate to amazon.com.
+Step 2: Sign in to your Amazon account (top-right "Hello, sign in").
+Step 3: Click the search bar, type "headphones", and press Enter.
+Step 4: Use the left-sidebar filters to narrow results:
+   - Set a price range matching your budget.
+   - Enable "Prime" to filter for fast-shipping items.
+   - Set minimum customer rating to 4 stars.
+Step 5: Click a product tile that looks promising.
+Step 6: On the product page, read the description, specifications tab, and customer reviews section.
+Step 7: If the product has variants (color, model tier), select the desired option from the dropdown or button group.
+Step 8: Confirm the seller is "Ships from and sold by Amazon.com" for reliability.
+Step 9: Click the yellow "Add to Cart" button.
+Step 10: In the cart pop-over, click "Proceed to checkout".
+Step 11: Verify the shipping address; update if needed.
+Step 12: Select a shipping speed (standard or expedited).
+Step 13: Review the order summary — quantity, price, tax, shipping cost.
+Step 14: Select or enter a payment method.
+Step 15: Click the orange "Place your order" button.
+Step 16: Copy the order confirmation number displayed on screen for your records.
+
+NOTES:
+- If the item is sold by a third-party seller, check their rating (aim for 95 %+ positive).
+- Watch for "Frequently bought together" upsells — dismiss if not needed.
+- Coupon codes can be applied on the cart page before checkout.

@@ -1,0 +1,28 @@
+TASK: Subscribe to YouTube Premium
+PLATFORM: Web — youtube.com
+
+Step 1: Open your browser and navigate to youtube.com.
+Step 2: Sign in to the Google account you want to associate with the subscription (top-right "Sign in").
+Step 3: Click your profile avatar (top-right corner) to open the account menu.
+Step 4: Select "Get YouTube Premium" from the menu, or navigate directly to youtube.com/premium.
+Step 5: On the YouTube Premium landing page, review the plan options:
+   - Individual plan.
+   - Family plan (up to 5 family members sharing one subscription, all must share the same home country).
+   - Student plan (discounted; requires verification of student status via SheerID).
+Step 6: Click "Try it free" or "Get Premium" on your chosen plan.
+   (A free trial period, typically one month, may be offered for new subscribers.)
+Step 7: A Google Pay / billing page will open. Confirm the billing details:
+   - Verify the correct Google account is shown.
+   - Review the pricing: monthly charge, trial end date, and renewal terms.
+Step 8: Select or add a payment method (credit/debit card, Google Play balance, or PayPal in supported regions).
+Step 9: Click "Buy" or "Start Trial" to confirm.
+Step 10: You will be redirected back to YouTube with a confirmation message. YouTube Premium features are now active:
+   - Ad-free playback.
+   - Background play (audio continues when screen is off or app is minimised).
+   - YouTube Music Premium included.
+   - Offline downloads in the YouTube mobile app.
+
+NOTES:
+- To cancel, go to youtube.com/paid_memberships and click "Manage membership" > "Deactivate". You retain Premium until the end of the paid billing period.
+- The Family plan requires all members to have a Google account and to accept the family group invitation.
+- Student discounts require annual re-verification through SheerID.

@@ -1,0 +1,27 @@
+TASK: Compose and Send an Email via Apple Mail
+PLATFORM: Apple Mail (macOS or iOS)
+
+Step 1: Open the Mail application.
+Step 2: Click or tap the Compose button:
+   - macOS: click the pencil-and-paper icon in the toolbar, or press Cmd + N.
+   - iOS/iPadOS: tap the pencil-and-paper icon in the bottom-right corner.
+Step 3: In the "To:" field, begin typing the recipient's name or email address. Mail will suggest matching contacts; select the correct one or finish typing the full address and press Tab.
+Step 4: (Optional) Add recipients to "Cc:" or "Bcc:" fields by clicking/tapping the respective label. Use Bcc for recipients whose addresses should be hidden from each other.
+Step 5: Click or tap the "Subject:" field and type a concise, descriptive subject line.
+Step 6: Click or tap the message body area and type your email content.
+Step 7: (Optional) Format the text:
+   - macOS: use the Format menu in the menu bar for fonts, bold, lists, etc.
+   - iOS: select text to reveal the formatting popover (Bold, Italic, Underline).
+Step 8: (Optional) Attach a file:
+   - macOS: drag a file onto the compose window, or use the paperclip icon in the toolbar.
+   - iOS: tap the paperclip or arrow-up icon above the keyboard, then choose Files, Photo Library, etc.
+Step 9: Review the To, Subject, and body for accuracy and typos.
+Step 10: Send the email:
+   - macOS: click the Send button (paper-plane icon) or press Cmd + Shift + D.
+   - iOS: tap the Send button (paper-plane icon) in the top-right.
+Step 11: Verify the email appears in the "Sent" mailbox.
+
+NOTES:
+- To save a draft and return later: close the compose window; Mail will prompt to save as a draft.
+- Schedule send (macOS Ventura+): click the arrow next to the Send button and choose "Send Later".
+- If sending from multiple accounts, check the "From:" field and select the correct account.
