@@ -1,26 +1,46 @@
-"""A real Dynamic-Island-style overlay at the MacBook notch, built with AppKit via PyObjC.
+"""A premium Dynamic-Island-style overlay that MERGES with the MacBook notch (AppKit / PyObjC).
 
-Unlike Tkinter, an AppKit NSWindow can sit ABOVE the menu bar, be transparent, have rounded
-corners, ignore mouse events (so it never steals focus from the app being automated), and tuck
-right under the physical notch. The replay runs on a worker thread and pushes status into STATE;
-an NSTimer on the main thread animates the spinner and redraws — so it always looks alive.
+vs. a floating pill, this panel sits flush against the screen top and is masked to a custom
+shape — square top corners that blend into the black notch, rounded bottom — so it reads as the
+notch *growing downward*. Built with the techniques the native notch apps use:
+  - NSVisualEffectView dark material, masked to the notch shape -> frosted glass in the right shape
+  - Core Animation layers (CAShapeLayer / CATextLayer) -> GPU-smooth, crisp at retina
+  - a CABasicAnimation rotating-arc spinner -> buttery, no timer redraw
+  - hairline border along the shape + soft shadow + grow-in fade
+
+The replay runs on a worker thread and pushes status into STATE; a light main-thread timer syncs
+the text/progress layers. Joins all Spaces, sits above the menu bar, ignores mouse events.
 """
 import time
-import math
 import threading
 
-import objc
 from AppKit import (
-    NSApplication, NSApplicationActivationPolicyAccessory, NSWindow, NSView, NSColor,
-    NSBezierPath, NSFont, NSScreen, NSTimer, NSAttributedString, NSMakeRect, NSMakePoint,
-    NSWindowStyleMaskBorderless, NSBackingStoreBuffered, NSStatusWindowLevel,
-    NSFontAttributeName, NSForegroundColorAttributeName,
-    NSWindowCollectionBehaviorCanJoinAllSpaces, NSWindowCollectionBehaviorStationary,
-    NSWindowCollectionBehaviorFullScreenAuxiliary,
+    NSApplication, NSApplicationActivationPolicyAccessory, NSWindow, NSColor, NSFont, NSScreen,
+    NSTimer, NSMakeRect, NSVisualEffectView, NSVisualEffectBlendingModeBehindWindow,
+    NSVisualEffectStateActive, NSAppearance, NSWindowStyleMaskBorderless, NSBackingStoreBuffered,
+    NSStatusWindowLevel, NSWindowCollectionBehaviorCanJoinAllSpaces,
+    NSWindowCollectionBehaviorStationary, NSWindowCollectionBehaviorFullScreenAuxiliary,
+    NSAnimationContext,
+)
+from Quartz import (
+    CAShapeLayer, CATextLayer, CABasicAnimation, CATransaction, CGRectMake,
+    CGPathCreateWithEllipseInRect, CGPathCreateMutable, CGPathMoveToPoint,
+    CGPathAddLineToPoint, CGPathAddArcToPoint, CGPathCloseSubpath,
 )
 
-W, H = 380.0, 44.0                      # island size (points)
-STATE = {"i": 0, "total": 1, "text": "Starting…", "frame": 0, "done": False}
+W, H, RB = 330.0, 64.0, 24.0      # width, height, bottom-corner radius
+NOTCH_TOP = 32.0                  # the notch/menubar strip; content must sit BELOW it
+ACCENT = (0.04, 0.52, 1.0)
+GREEN = (0.18, 0.82, 0.36)
+STATE = {"i": 0, "total": 1, "text": "Starting…", "done": False}
+
+
+def _cg(rgb, a=1.0):
+    return NSColor.colorWithCalibratedRed_green_blue_alpha_(rgb[0], rgb[1], rgb[2], a).CGColor()
+
+
+def _white(a=1.0):
+    return NSColor.colorWithCalibratedWhite_alpha_(1.0, a).CGColor()
 
 
 def _notch_center(screen):
@@ -34,62 +54,29 @@ def _notch_center(screen):
     return screen.frame().size.width / 2.0
 
 
-def _text(s, x, y, size, bold, color):
-    font = NSFont.boldSystemFontOfSize_(size) if bold else NSFont.systemFontOfSize_(size)
-    NSAttributedString.alloc().initWithString_attributes_(
-        s, {NSFontAttributeName: font, NSForegroundColorAttributeName: color}
-    ).drawAtPoint_(NSMakePoint(x, y))
+def _notch_path(w, h, rb):
+    """Flush-top (square corners blend into the notch), rounded-bottom shape."""
+    p = CGPathCreateMutable()
+    CGPathMoveToPoint(p, None, 0, h)
+    CGPathAddLineToPoint(p, None, w, h)                 # top edge (flush with screen top)
+    CGPathAddArcToPoint(p, None, w, 0, 0, 0, rb)        # round bottom-right
+    CGPathAddArcToPoint(p, None, 0, 0, 0, h, rb)        # round bottom-left
+    CGPathAddLineToPoint(p, None, 0, h)
+    CGPathCloseSubpath(p)
+    return p
 
 
-class IslandView(NSView):
-    def drawRect_(self, rect):
-        b = self.bounds()
-        w, h = b.size.width, b.size.height
-        st = STATE
-        done = st["done"]
-        accent = (NSColor.colorWithCalibratedRed_green_blue_alpha_(0.18, 0.82, 0.36, 1.0) if done
-                  else NSColor.colorWithCalibratedRed_green_blue_alpha_(0.04, 0.52, 1.0, 1.0))
-
-        # the black pill
-        pill = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(b, h / 2.0, h / 2.0)
-        NSColor.colorWithCalibratedWhite_alpha_(0.04, 0.97).set()
-        pill.fill()
-
-        # left indicator: rotating arc (or a check when done)
-        cx, cy, r = 26.0, h / 2.0, 8.0
-        accent.set()
-        if done:
-            chk = NSBezierPath.bezierPath(); chk.setLineWidth_(2.6)
-            chk.moveToPoint_(NSMakePoint(cx - 5, cy)); chk.lineToPoint_(NSMakePoint(cx - 1, cy - 4))
-            chk.lineToPoint_(NSMakePoint(cx + 6, cy + 5)); chk.stroke()
-        else:
-            ang = (st["frame"] * 28) % 360
-            arc = NSBezierPath.bezierPath(); arc.setLineWidth_(2.6)
-            arc.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_(
-                NSMakePoint(cx, cy), r, ang, ang + 270)
-            arc.stroke()
-
-        # two lines of text
-        msg = st["text"]
-        msg = (msg[:34] + "…") if len(msg) > 35 else msg
-        _text(msg, 46, h / 2.0 - 1, 12.5, True, NSColor.whiteColor())
-        head = "complete" if done else f"step {st['i']} of {st['total']}"
-        _text(head, 46, h / 2.0 - 15, 9.5, False, NSColor.colorWithCalibratedWhite_alpha_(0.55, 1.0))
-
-        # progress bar on the right
-        bx1, bx2, by = w - 120, w - 22, h / 2.0 - 1
-        NSColor.colorWithCalibratedWhite_alpha_(0.22, 1.0).set()
-        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-            NSMakeRect(bx1, by, bx2 - bx1, 4), 2, 2).fill()
-        frac = max(0.03, min(1.0, st["i"] / max(1, st["total"])))
-        accent.set()
-        NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-            NSMakeRect(bx1, by, (bx2 - bx1) * frac, 4), 2, 2).fill()
+def _text_layer(x, y, w, h, size, bold, a=1.0):
+    t = CATextLayer.layer()
+    t.setContentsScale_(2.0)
+    t.setFont_(NSFont.boldSystemFontOfSize_(size) if bold else NSFont.systemFontOfSize_(size))
+    t.setFontSize_(size)
+    t.setForegroundColor_(_white(a))
+    t.setFrame_(CGRectMake(x, y, w, h))
+    return t
 
 
 class NotchIsland:
-    """Controller. .step()/​.finish() are called from the worker thread (set plain dict only)."""
-
     def step(self, i, total, text):
         STATE.update(i=i, total=total, text=text)
 
@@ -100,16 +87,16 @@ class NotchIsland:
     def run(self, target):
         self._done_at = None
         app = NSApplication.sharedApplication()
-        app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)   # no dock icon, no focus steal
+        app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
         screen = NSScreen.mainScreen()
         sf = screen.frame()
-        cx = _notch_center(screen)
-        x = cx - W / 2.0
-        y = sf.size.height - 32.0 - H + 6.0          # tuck up under the 32pt notch
+        x = _notch_center(screen) - W / 2.0
+        y = sf.size.height - H                          # FLUSH with the screen top
+
         win = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(x, y, W, H), NSWindowStyleMaskBorderless, NSBackingStoreBuffered, False)
-        win.setLevel_(NSStatusWindowLevel)            # above the menu bar
-        win.setCollectionBehavior_(                   # follow the user onto EVERY Space + fullscreen
+        win.setLevel_(NSStatusWindowLevel)
+        win.setCollectionBehavior_(
             NSWindowCollectionBehaviorCanJoinAllSpaces
             | NSWindowCollectionBehaviorStationary
             | NSWindowCollectionBehaviorFullScreenAuxiliary)
@@ -117,18 +104,63 @@ class NotchIsland:
         win.setBackgroundColor_(NSColor.clearColor())
         win.setIgnoresMouseEvents_(True)
         win.setHasShadow_(True)
-        view = IslandView.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
-        win.setContentView_(view)
-        win.orderFrontRegardless()
-        self._win, self._view = win, view
-        print(f"island window @ x={x:.0f} y={y:.0f} {W:.0f}x{H:.0f} level={win.level()}", flush=True)
 
-        def _tick(timer):
-            STATE["frame"] += 1
-            view.setNeedsDisplay_(True)
-            if self._done_at and time.time() - self._done_at > 1.6:
-                NSApplication.sharedApplication().terminate_(None)
-        NSTimer.scheduledTimerWithTimeInterval_repeats_block_(0.08, True, _tick)
+        fx = NSVisualEffectView.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
+        try:
+            fx.setMaterial_(18)                          # NSVisualEffectMaterialHUDWindow
+        except Exception:
+            pass
+        fx.setBlendingMode_(NSVisualEffectBlendingModeBehindWindow)
+        fx.setState_(NSVisualEffectStateActive)
+        fx.setAppearance_(NSAppearance.appearanceNamed_("NSAppearanceNameVibrantDark"))
+        fx.setWantsLayer_(True)
+        lay = fx.layer()
+
+        shape = _notch_path(W, H, RB)
+        mask = CAShapeLayer.layer(); mask.setPath_(shape)
+        lay.setMask_(mask)                               # frosted glass clipped to the notch shape
+        border = CAShapeLayer.layer()
+        border.setPath_(shape); border.setFillColor_(NSColor.clearColor().CGColor())
+        border.setStrokeColor_(_white(0.16)); border.setLineWidth_(1.2)
+        lay.addSublayer_(border)
+        win.setContentView_(fx)
+
+        cy = (H - NOTCH_TOP) / 2.0 + 1                   # vertical center of the BELOW-notch area
+        # spinner
+        d = 16.0
+        spin = CAShapeLayer.layer()
+        spin.setBounds_(CGRectMake(0, 0, d, d)); spin.setPosition_((26.0, cy))
+        spin.setPath_(CGPathCreateWithEllipseInRect(CGRectMake(0, 0, d, d), None))
+        spin.setStrokeColor_(_cg(ACCENT)); spin.setFillColor_(NSColor.clearColor().CGColor())
+        spin.setLineWidth_(2.3); spin.setLineCap_("round")
+        spin.setStrokeStart_(0.0); spin.setStrokeEnd_(0.72)
+        rot = CABasicAnimation.animationWithKeyPath_("transform.rotation.z")
+        rot.setFromValue_(0.0); rot.setToValue_(-6.2831853); rot.setDuration_(0.85)
+        rot.setRepeatCount_(1e9)
+        spin.addAnimation_forKey_(rot, "spin")
+        lay.addSublayer_(spin); self._spin = spin
+
+        self._title = _text_layer(46, cy - 1, W - 150, 17, 12.5, True)
+        self._sub = _text_layer(46, cy - 15, W - 150, 13, 9.5, False, a=0.55)
+        lay.addSublayer_(self._title); lay.addSublayer_(self._sub)
+
+        self._px, self._pw = W - 92, 70.0
+        track = CAShapeLayer.layer()
+        track.setFrame_(CGRectMake(self._px, cy - 1, self._pw, 4)); track.setCornerRadius_(2)
+        track.setBackgroundColor_(_white(0.18)); lay.addSublayer_(track)
+        self._fill = CAShapeLayer.layer()
+        self._fill.setFrame_(CGRectMake(self._px, cy - 1, 3, 4)); self._fill.setCornerRadius_(2)
+        self._fill.setBackgroundColor_(_cg(ACCENT)); lay.addSublayer_(self._fill)
+        self._cy = cy
+
+        win.setAlphaValue_(0.0); win.orderFrontRegardless(); self._win = win
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.currentContext().setDuration_(0.28)
+        win.animator().setAlphaValue_(1.0)
+        NSAnimationContext.endGrouping()
+        self._sync()
+
+        NSTimer.scheduledTimerWithTimeInterval_repeats_block_(0.1, True, lambda t: self._sync())
 
         def _wrap():
             try:
@@ -138,3 +170,23 @@ class NotchIsland:
                     self.finish()
         threading.Thread(target=_wrap, daemon=True).start()
         app.run()
+
+    def _sync(self):
+        st = STATE
+        CATransaction.begin(); CATransaction.setDisableActions_(True)
+        msg = st["text"]
+        self._title.setString_((msg[:30] + "…") if len(msg) > 31 else msg)
+        self._sub.setString_("complete" if st["done"] else f"step {st['i']} of {st['total']}")
+        frac = max(0.04, min(1.0, st["i"] / max(1, st["total"])))
+        self._fill.setFrame_(CGRectMake(self._px, self._cy - 1, self._pw * frac, 4))
+        if st["done"]:
+            self._spin.setStrokeColor_(_cg(GREEN)); self._spin.setStrokeEnd_(1.0)
+            self._spin.removeAnimationForKey_("spin"); self._fill.setBackgroundColor_(_cg(GREEN))
+        CATransaction.commit()
+        if self._done_at and time.time() - self._done_at > 1.7:
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.currentContext().setDuration_(0.3)
+            self._win.animator().setAlphaValue_(0.0)
+            NSAnimationContext.endGrouping()
+            NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
+                0.35, False, lambda t: NSApplication.sharedApplication().terminate_(None))
