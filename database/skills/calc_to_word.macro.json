@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "surface": "desktop",
+  "name": "calculator_to_word_save",
+  "app": "Calculator + Microsoft Word",
+  "os": "macos",
+  "version": 1,
+  "parent_version": null,
+  "status": "active",
+  "note": "Calculate two numbers and save the result in a Word document. For example: calculate 50 multiplied by 9, calculate 10 times 10, multiply two numbers, add or subtract numbers and save the answer in Word.",
+  "description": "Performs a calculation in Calculator, copies the result, pastes it into a new Word document, and saves the document on the Desktop.",
+  "params": {"calculation": "1234+5678", "expected_result": "6,912", "filename": "calc_result", "location": "Desktop"},
+  "checker": {"type": "word_docx", "location": "{{location}}", "filename": "{{filename}}.docx", "contains": ["Calculation result:", "{{expected_result}}"]},
+  "stats": {"uses": 0, "successes": 0, "failures": 0, "success_rate": 0.0, "avg_duration": 0.0, "model_calls": 0},
+  "steps": [
+    {"id": "open_calculator", "op": "open_app", "app": "Calculator", "launch_wait": 6, "precondition": {}, "postcondition": {"foreground_app": "Calculator"}, "timeout": 6, "retry_limit": 1, "fallback": [], "why": "Open Calculator"},
+    {"id": "clear_calculator", "op": "key", "key": "escape", "precondition": {"foreground_app": "Calculator"}, "postcondition": {"foreground_app": "Calculator"}, "timeout": 2, "retry_limit": 0, "fallback": [], "why": "Clear the previous calculation"},
+    {"id": "calculate", "op": "type", "text": "{{calculation}}=", "precondition": {"foreground_app": "Calculator"}, "postcondition": {"foreground_app": "Calculator"}, "timeout": 2, "retry_limit": 0, "fallback": [], "why": "Perform the requested calculation"},
+    {"id": "copy_result", "op": "hotkey", "keys": ["command", "c"], "precondition": {"foreground_app": "Calculator"}, "postcondition": {"clipboard_contains": "{{expected_result}}"}, "timeout": 2, "retry_limit": 1, "fallback": [], "why": "Copy and verify the calculation result"},
+    {"id": "prepare_document", "op": "call", "skill": "ensure_blank_document", "params": {}, "precondition": {}, "postcondition": {}, "timeout": 10, "retry_limit": 0, "fallback": [], "why": "Prepare a Word document"},
+    {"id": "enter_label", "op": "type", "text": "Calculation result: ", "precondition": {"foreground_app": "Microsoft Word", "word_document": true}, "postcondition": {"word_document": true}, "timeout": 2, "retry_limit": 0, "fallback": [], "why": "Type the result label"},
+    {"id": "paste_result", "op": "hotkey", "keys": ["command", "v"], "precondition": {"clipboard_contains": "{{expected_result}}", "word_document": true}, "postcondition": {"word_document": true}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Paste the verified result"},
+    {"id": "save_document", "op": "call", "skill": "save_word_document", "params": {"filename": "{{filename}}", "location": "{{location}}"}, "precondition": {}, "postcondition": {}, "timeout": 12, "retry_limit": 0, "fallback": [], "why": "Save and verify the result document"}
+  ]
+}
