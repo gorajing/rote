@@ -291,7 +291,7 @@ def run(intent: str, skill_md: str | None = None, max_turns: int | None = None,
             print(f"  [{turn:>2}] {call.name:<18} exec={dt_exec:4.1f}s shot={dt_shot:4.1f}s  {args.get('intent','')}")
             traj.append({"turn": turn, "action": call.name, "intent": args.get("intent", ""), "args": args})
             responses.append({"type": "function_result", "name": call.name, "call_id": call.id,
-                              "result": [{"type": "text", "text": json.dumps(result)},
+                              "result": [{"type": "text", "text": json.dumps({"url": "desktop://macos", **result})},
                                          {"type": "image", "data": shot_b64, "mime_type": "image/png"}]})
         # stuck = same action AND same args repeated (so typing different text isn't flagged)
         recent.append(json.dumps([[c.name, str(dict(c.arguments).get("text", ""))[:24]] for c in calls]))
