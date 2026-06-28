@@ -1,20 +1,66 @@
 {
+  "schema_version": 2,
   "name": "create_word_file",
   "app": "Microsoft Word",
   "os": "macos",
-  "note": "Keyboard-first replay: NO screenshots, NO model calls. The model only gets invoked if the post-replay success check fails (self-heal).",
-  "params": {"text": "Hello from Gemini Computer Use.", "filename": "gemini", "location": "Desktop"},
+  "version": 1,
+  "parent_version": null,
+  "status": "active",
+  "note": "Create and verify a parameterized Word document on the Desktop.",
+  "params": {
+    "text": "Hello from Gemini Computer Use.",
+    "filename": "gemini",
+    "location": "Desktop"
+  },
+  "checker": {
+    "type": "word_docx",
+    "location": "{{location}}",
+    "filename": "{{filename}}.docx",
+    "contains": "{{text}}"
+  },
+  "stats": {
+    "uses": 0,
+    "successes": 0,
+    "failures": 0,
+    "success_rate": 0.0,
+    "avg_duration": 0.0,
+    "model_calls": 0
+  },
   "steps": [
-    {"op": "open_app", "app": "Microsoft Word", "why": "launch Word reliably (no Spotlight hotkey gamble)"},
-    {"op": "wait", "seconds": 6, "why": "wait for Word to finish launching"},
-    {"op": "hotkey", "keys": ["command", "n"], "why": "new blank document (skips the template gallery)"},
-    {"op": "wait", "seconds": 2, "why": "wait for the blank document"},
-    {"op": "type", "text": "Hello from Gemini Computer Use.", "why": "write the content"},
-    {"op": "hotkey", "keys": ["command", "s"], "why": "open the save dialog"},
-    {"op": "wait", "seconds": 2, "why": "wait for the save sheet"},
-    {"op": "type", "text": "gemini", "why": "set the filename (name field is focused by default)"},
-    {"op": "hotkey", "keys": ["command", "d"], "why": "jump to Desktop (standard macOS save-dialog shortcut)"},
-    {"op": "key", "key": "return", "why": "confirm save"},
-    {"op": "wait", "seconds": 2, "why": "let the write finish"}
+    {
+      "id": "prepare_document",
+      "op": "call",
+      "skill": "ensure_blank_document",
+      "params": {},
+      "precondition": {},
+      "postcondition": {},
+      "timeout": 10,
+      "retry_limit": 0,
+      "fallback": [],
+      "why": "Open Word and ensure a blank document is ready"
+    },
+    {
+      "id": "enter_content",
+      "op": "type",
+      "text": "{{text}}",
+      "precondition": {"foreground_app": "Microsoft Word", "word_document": true},
+      "postcondition": {"word_document": true},
+      "timeout": 3,
+      "retry_limit": 0,
+      "fallback": [],
+      "why": "Write the requested document content"
+    },
+    {
+      "id": "save_document",
+      "op": "call",
+      "skill": "save_word_document",
+      "params": {"filename": "{{filename}}", "location": "{{location}}"},
+      "precondition": {},
+      "postcondition": {},
+      "timeout": 12,
+      "retry_limit": 0,
+      "fallback": [],
+      "why": "Save and verify the Word document"
+    }
   ]
 }
