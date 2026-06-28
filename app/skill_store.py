@@ -139,10 +139,14 @@ def save_skill(macro: dict, description: str, name: str | None = None) -> str:
     ...) sit at the document root, alongside `description` (vector-indexed) and `doc_type`."""
     macro = flatten_macro(macro)
     name = name or macro.get("name") or "task"
+    site = macro.get("site") or macro.get("app") or macro.get("target")
+    platform = macro.get("platform") or macro.get("surface") or "desktop"
     doc = {
         **{k: v for k, v in macro.items() if k not in _NON_MACRO_KEYS},
         "name": name,
         "description": description,
+        "site": site,
+        "platform": platform,
         "doc_type": "skill",
         "verified": True,
         "created_at": datetime.now(timezone.utc).isoformat(),

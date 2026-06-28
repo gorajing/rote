@@ -140,6 +140,18 @@ def _expand_steps(skill: dict, params: dict, registry: LocalSkillRegistry) -> li
     return expanded
 
 
+def _checker_needs_state(checker: dict | None) -> bool:
+    checker = checker or {}
+    if not checker:
+        return False
+    kind = checker.get("type", "condition")
+    if kind == "condition":
+        return bool(checker.get("condition"))
+    if kind in {"all", "any"}:
+        return any(_checker_needs_state(child) for child in checker.get("checks", []))
+    return False
+
+
 def replay_verified(
     skill: dict,
     params: dict | None = None,
@@ -178,8 +190,9 @@ def replay_verified(
             if on_event:
                 on_event("step", {"index": index, "total": len(steps), "step": step})
             backend.execute(step)                          # dynamic waits inside; no inspection
-        # file/HTTP checkers don't need desktop state -> skip the expensive final inspect() scan
-        passed, failures = check_final(skill.get("checker"), params)
+        # File/HTTP checkers do not need desktop state. Stateful condition checkers do.
+        state = backend.inspect() if _checker_needs_state(skill.get("checker")) else None
+        passed, failures = check_final(skill.get("checker"), params, state)
         if passed or not (allow_repair and repair_service is not None):
             return {
                 "success": passed, "checker_passed": passed,

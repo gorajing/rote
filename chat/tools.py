@@ -40,8 +40,8 @@ def search_db(description: str) -> list[dict]:
             "_id":         str(r.get("_id", "")),
             "name":        r.get("name", "unknown"),
             "description": r.get("description", r.get("note", "")),
-            "site":        r.get("site", ""),         # exact application / website (e.g. "amazon", "excel")
-            "platform":    r.get("platform", ""),     # broad category (e.g. "web", "adobe", "whatsapp")
+            "site":        r.get("site") or macro.get("app") or macro.get("target", ""),
+            "platform":    r.get("platform") or macro.get("surface", ""),
             "variables":   r.get("variables", {}),
             "score":       round(float(r.get("score", 0.0)), 4),
             **macro,

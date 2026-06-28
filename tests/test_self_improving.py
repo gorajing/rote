@@ -210,6 +210,22 @@ class MacroTests(unittest.TestCase):
         self.assertFalse(failed)
         self.assertIn("TextEdit has no open document", failures)
 
+    def test_optimistic_replay_condition_checker_reads_final_state(self):
+        skill = textedit_heading_skill()
+        skill["steps"].insert(1, {
+            "id": "new_textedit_document", "op": "hotkey", "keys": ["command", "n"],
+            "precondition": {"foreground_app": "TextEdit"},
+            "postcondition": {"textedit_document": True},
+            "timeout": 0, "retry_limit": 0, "fallback": [], "why": "Create TextEdit document",
+        })
+        backend = FakeBackend(create_document=True)
+        backend.state["clipboard"] = "Example Domains"
+        result = replay_verified(
+            skill, backend=backend, registry=LocalSkillRegistry(tempfile.mkdtemp()), optimistic=True,
+        )
+        self.assertTrue(result["success"], result["checker_failures"])
+        self.assertEqual(result["mode"], "optimistic")
+
 
 class RegistryAndRepairTests(unittest.TestCase):
     def test_candidate_is_promoted_only_after_full_validation(self):

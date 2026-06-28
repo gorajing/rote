@@ -127,7 +127,7 @@ class FlattenTests(unittest.TestCase):
 
 class SaveSkillTests(unittest.TestCase):
     def test_pushes_self_contained_document(self):
-        macro = {"schema_version": 2, "name": "calc", "surface": "desktop",
+        macro = {"schema_version": 2, "name": "calc", "surface": "desktop", "app": "Calculator",
                  "checker": {"type": "word_docx"}, "params": {"x": "1"},
                  "steps": [{"id": "s1", "op": "type", "text": "hi"}]}
         captured = {}
@@ -137,6 +137,8 @@ class SaveSkillTests(unittest.TestCase):
         self.assertEqual(captured["doc_type"], "skill")
         self.assertEqual(captured["description"], "calculate two numbers")
         self.assertEqual(captured["name"], "calc")           # top-level macro fields
+        self.assertEqual(captured["site"], "Calculator")
+        self.assertEqual(captured["platform"], "desktop")
         self.assertEqual(captured["params"], {"x": "1"})
         self.assertIn("steps", captured)
         self.assertIn("created_at", captured)
