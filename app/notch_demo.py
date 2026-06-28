@@ -23,7 +23,7 @@ def main() -> None:
     notch.send("thinking", title="Thinking…")
     time.sleep(1.2)
     notch.send("speaking", title="Speaking")
-    time.sleep(1.4)
+    time.sleep(2.4)                          # watch the dot pulse like a voice (#1)
 
     total = 7
     for i in range(1, total + 1):
@@ -31,7 +31,7 @@ def main() -> None:
         notch.send("working", i=i, total=total, title=title)
         time.sleep(0.5)
 
-    notch.send("done", title="Done")
+    notch.send("done", title="Done", subtitle="Saved calc_result_2.docx")   # real filename (#2)
     time.sleep(2.2)                          # daemon collapses the check back to the pill on its own
     notch.send("idle", title="Rote")
     time.sleep(0.5)

@@ -205,6 +205,7 @@ class RoteAssistant(Agent):
         )
         tail = []
         opened, said_work, said_save = 0, False, False
+        saved_as = None                               # the real (possibly de-duped) filename
         assert proc.stdout is not None
         try:
             async for raw in proc.stdout:
@@ -243,12 +244,14 @@ class RoteAssistant(Agent):
                     _say(context.session, "Fixed and verified.")
                 elif kind == "rejected":
                     _say(context.session, "Hmm, that fix didn't hold.")
+                elif kind == "result" and ev.get("filename"):
+                    saved_as = f"{ev['filename']}.docx"   # closes the loop + shows the no-overwrite name
             await proc.wait()
             if proc.returncode != 0:
                 NOTCH.send("error", title="Couldn't finish")
                 await asyncio.sleep(1.4)              # let the error read before it collapses
                 raise ToolError(f"The {pretty} task didn't complete: {''.join(tail)[-300:]}")
-            NOTCH.send("done", title="Done")
+            NOTCH.send("done", title="Done", subtitle=(f"Saved {saved_as}" if saved_as else ""))
             await asyncio.sleep(1.2)                  # hold the green check before the spoken wrap-up
             return random.choice(_DONE)
         finally:

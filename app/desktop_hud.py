@@ -70,6 +70,11 @@ def main():
             on_event=event,
             optimistic=not a.repair,   # fast blind replay for voice; verified per-step when self-healing
         )
+        if a.events:                                   # tell the narrator the real (unique) filename
+            print("@@EV " + json.dumps(
+                {"kind": "result", "success": result.get("success"),
+                 "filename": result.get("filename"), "location": result.get("location")},
+                default=str), flush=True)
         hud.finish("Done ✓" if result["success"] else "Verification failed")
 
     if a.headless:

@@ -19,6 +19,7 @@ Threading: AppKit owns the main thread + run loop; a worker thread mutates STATE
 timer reconciles STATE → layers. Same split the rest of the app relies on.
 """
 import math
+import random
 import time
 import threading
 
@@ -316,6 +317,13 @@ class NotchIsland:
         self._dot.setTransform_(_scale_transform(scale))
         CATransaction.commit()
 
+    def _speaking_level(self):
+        """A natural 'talking' envelope for the dot while Rote speaks (two oscillators + light
+        jitter). Bounded to the speaking state, so it reads as a voice without tapping TTS audio."""
+        t = time.time() - getattr(self, "_spk_t0", 0.0)
+        v = 0.30 + 0.32 * abs(math.sin(t * 7.5)) + 0.18 * abs(math.sin(t * 3.1 + 1.0))
+        return max(0.12, min(1.0, v + random.uniform(-0.07, 0.07)))
+
     def _set_ring(self, frac):
         if abs(frac - self._frac) < 0.001:
             return
@@ -371,6 +379,8 @@ class NotchIsland:
             self._show(self._dot, True); self._dot.setFillColor_(_cg(DANGER))
         if mode == "done":
             self._draw_check()
+        if mode == "speaking":
+            self._spk_t0 = time.time()
         if mode not in ("listening", "speaking"):
             self._dot.setTransform_(_scale_transform(1.0))   # clear any leftover pulse scale
         if mode == "idle" and not self._reduce:
@@ -399,8 +409,10 @@ class NotchIsland:
         if mode == "working":
             frac = max(0.0, min(1.0, st["i"] / max(1, st["total"])))
             self._set_ring(frac)
-        if mode in ("listening", "speaking"):
-            self._pulse_dot(st.get("level", 0.0))
+        if mode == "speaking":
+            self._pulse_dot(self._speaking_level())      # alive while Rote talks
+        elif mode == "listening":
+            self._pulse_dot(st.get("level", 0.0))         # driven by your mic VAD
 
         # persistent companion: a finished task settles, then collapses back to the pill
         if mode == "done" and self._done_at and time.time() - self._done_at > 1.6:
