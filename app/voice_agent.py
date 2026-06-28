@@ -79,6 +79,8 @@ def _keyterms(catalog: dict[str, str]) -> list[str]:
 
 CATALOG = _skill_catalog()
 KEYTERMS = _keyterms(CATALOG)
+print(f"[ROTE] startup: loaded {len(CATALOG)} skill(s) from MongoDB: "
+      f"{', '.join(CATALOG) or '(none — DB empty/unreachable)'}", flush=True)
 
 
 def _say(session, text: str) -> None:
@@ -173,12 +175,17 @@ class RoteAssistant(Agent):
         Returns a message telling you whether a skill was found and, if so, its exact name to pass to
         run_skill. If nothing is found, call computer_use to learn the task.
         """
+        print(f"[ROTE] database_get: searching MongoDB `tasks` for: {description!r}", flush=True)
         NOTCH.send("thinking", title="Searching skills…")
         macro = await asyncio.to_thread(skill_store.search, description)
         if macro is None:
+            print("[ROTE] database_get: NO MATCH in MongoDB -> agent should call computer_use to learn", flush=True)
             return ("No matching skill is in the database. Call computer_use with the user's full "
                     "request as the intent to learn it now.")
         name = (macro.get("name") or "task").strip().replace(" ", "_").lower()
+        calls = sum(1 for s in macro.get("steps", []) if s.get("op") == "call")
+        print(f"[ROTE] database_get: MATCH '{name}' from MongoDB — {len(macro.get('steps', []))} steps, "
+              f"call-ops={calls} ({'LOCAL DEPENDENCY!' if calls else 'self-contained'})", flush=True)
         _FOUND[name] = macro                          # cache so run_skill needs no second DB round-trip
         return f"Found a learned skill named '{name}'. Call run_skill with skill='{name}' now."
 
@@ -194,11 +201,17 @@ class RoteAssistant(Agent):
                 empty for other skills or when no calculation was requested.
         """
         skill = skill.strip().replace(" ", "_").lower()
+        cached = skill in _FOUND
         macro = _FOUND.get(skill) or await asyncio.to_thread(skill_store.search, skill.replace("_", " "))
         if macro is None:
+            print(f"[ROTE] run_skill '{skill}': NOT in MongoDB", flush=True)
             raise ToolError(
                 f"No skill '{skill}' in the database. Use computer_use to learn it first."
             )
+        calls = sum(1 for s in macro.get("steps", []) if s.get("op") == "call")
+        print(f"[ROTE] run_skill '{skill}': replaying macro from "
+              f"{'DB cache' if cached else 'fresh MongoDB search'} — {len(macro.get('steps', []))} steps, "
+              f"call-ops={calls} ({'LOCAL DEPENDENCY!' if calls else 'self-contained, DB-only'})", flush=True)
         context.disallow_interruptions()             # desktop action — don't cut it off mid-run
         pretty = skill.replace("_", " ")
 
@@ -294,6 +307,7 @@ class RoteAssistant(Agent):
             intent: The user's full request, phrased as a task to perform (e.g. "Create a new
                 Microsoft Word document, type 'Hello', and save it to the Desktop as notes").
         """
+        print(f"[ROTE] computer_use: LEARNING new task via Gemini computer-use: {intent!r}", flush=True)
         context.disallow_interruptions()              # long live operation — don't cut it off
         _BUSY["skill"] = True
         NOTCH.send("thinking", title="Learning this…", subtitle=intent[:44])
