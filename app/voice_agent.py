@@ -31,15 +31,22 @@ SKILLS_DIR = REPO / "database" / "skills"
 
 
 def _skill_catalog() -> dict[str, str]:
-    """Available learned skills: {skill_key: human description} from the macro files."""
+    """User-facing DESKTOP tasks: {skill_key: human description}. Excludes browser skills,
+    test fixtures (stale_*), and reusable subskills (building blocks have no final checker)."""
     out = {}
     for p in SKILLS_DIR.glob("*.macro.json"):
         key = p.name[:-len(".macro.json")]
+        if key.startswith("stale_"):
+            continue
         try:
             m = json.loads(p.read_text())
-            out[key] = m.get("note") or m.get("name") or key
         except Exception:
-            out[key] = key
+            continue
+        if m.get("surface", "desktop") != "desktop":      # skip browser skills
+            continue
+        if not m.get("checker"):                           # subskill / building block -> skip
+            continue
+        out[key] = m.get("note") or m.get("description") or m.get("name") or key
     return out
 
 
@@ -133,28 +140,53 @@ class RoteAssistant(Agent):
             )
         context.disallow_interruptions()             # desktop action — don't cut it off mid-run
         pretty = skill.replace("_", " ")
-        milestones = _milestones(json.loads(path.read_text()).get("steps", []))
 
         _say(context.session, random.choice(_INTROS))
-        # -u = unbuffered so step output streams in real time and narration tracks the action
+        # run main's verified replay in a subprocess (owns the notch HUD's AppKit main thread),
+        # asking it to stream engine events (@@EV json) which we narrate live. -u = unbuffered.
         proc = await asyncio.create_subprocess_exec(
-            "python3", "-u", "-m", "app.desktop_hud", "--replay", str(path),
+            "python3", "-u", "-m", "app.desktop_hud", "--replay", str(path), "--events",
             cwd=str(REPO),
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
         )
-        tail, pat = [], re.compile(r"\[\s*(\d+)\]")
+        tail = []
+        opened, said_work, said_save = 0, False, False
         assert proc.stdout is not None
         async for raw in proc.stdout:
             line = raw.decode("utf-8", "ignore")
             tail.append(line)
-            m = pat.search(line)
-            if m:
-                phrase = milestones.pop(int(m.group(1)), None)
-                if phrase:
-                    _say(context.session, phrase)
+            if not line.startswith("@@EV "):
+                continue
+            try:
+                ev = json.loads(line[5:])
+            except Exception:
+                continue
+            kind = ev.get("kind")
+            if kind == "step":
+                op = ev.get("op") or ""
+                why = (ev.get("why") or "").lower()
+                keys = {str(k).lower() for k in (ev.get("keys") or [])}
+                ref = (ev.get("skill") or "").lower()
+                app = ev.get("app") or "the app"
+                if op == "open_app":
+                    _say(context.session,
+                         random.choice(_OPEN_FIRST if opened == 0 else _OPEN_NEXT).format(app=app))
+                    opened += 1
+                elif (keys == {"command", "s"} or "save" in ref or "save" in why) and not said_save:
+                    said_save = True
+                    _say(context.session, random.choice(_SAVING))
+                elif op in ("type", "call") and not said_work:
+                    said_work = True
+                    _say(context.session, random.choice(_WORKING))
+            elif kind == "repairing":
+                _say(context.session, "One sec, let me fix a step for you.")
+            elif kind == "promoted":
+                _say(context.session, "Fixed and verified.")
+            elif kind == "rejected":
+                _say(context.session, "Hmm, that fix didn't hold.")
         await proc.wait()
         if proc.returncode != 0:
-            raise ToolError(f"The {pretty} task failed: {''.join(tail)[-200:]}")
+            raise ToolError(f"The {pretty} task didn't complete: {''.join(tail)[-300:]}")
         return random.choice(_DONE)
 
 
