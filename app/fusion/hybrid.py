@@ -147,35 +147,38 @@ def _desktop_trace_to_traj(trace: dict) -> Trajectory:
                       final_text=trace.get("metrics", {}).get("final", ""), success=True)
 
 
-def _desktop_segment(native_app: str, marker: str, max_turns: int = 14) -> HybridSegment:
+def _desktop_segment(native_app: str, marker: str, max_turns: int = 14, attempts: int = 3) -> HybridSegment:
     """Gemini opens the native app and pastes the clipboard into a new note; lower to a 0-CU
-    FusedSkill. Gated on GROUND TRUTH: reject an aborted/stuck doer run, and require the marker to
-    actually be in the front TextEdit document before compiling."""
+    FusedSkill. Gated on GROUND TRUTH: only a run that actually lands the marker in the front
+    document is compiled. Desktop CU is fumbly (and can hit a model safety block on a bad
+    prediction), so RETRY the doer up to `attempts` times — a fresh blank doc each attempt."""
     intent = (f"A blank {native_app} document is already open and focused. Paste the text that is on "
-              "the clipboard by pressing Command+V — a single keyboard shortcut. Do not click anything "
-              "or open any menu; just press Command+V. Then you are finished.")
-    desktop_cu.ensure_app(native_app)                     # launch it
-    _new_textedit_doc(native_app)                         # guarantee a fresh, focused blank doc to paste into
-    with tempfile.TemporaryDirectory() as tmp:
-        trace_path = os.path.join(tmp, "desktop_segment.json")
-        try:
-            desktop_cu.run(intent, trace_path=trace_path, max_turns=max_turns)
-        except Exception as exc:                          # preserve the real error, not FileNotFound
-            raise HybridLearnError(f"desktop doer failed: {type(exc).__name__}: {exc}") from exc
-        if not os.path.exists(trace_path):
-            raise HybridLearnError("desktop doer wrote no trace (API error mid-run?)")
-        with open(trace_path, encoding="utf-8") as f:
-            trace = json.load(f)
-    if str(trace.get("metrics", {}).get("final", "")).startswith("ABORTED"):
-        raise HybridLearnError("desktop doer aborted (stuck) — refusing to compile a failed trace")
-    from .world_verifiers import read_textedit
-    if marker.lower() not in read_textedit(native_app).lower():
-        raise HybridLearnError("desktop segment did not write the note (TextEdit lacks the marker)")
-    traj = _desktop_trace_to_traj(trace)
-    skill = compile_fused(traj, surface="desktop", name="hybrid_write_note", params={},
-                          verify={"kind": "textedit", "contains": marker})
-    skill.target = native_app                             # replay re-opens it before driving
-    return HybridSegment(role="write_textedit_note", surface="desktop", skill=skill)
+              "the clipboard by pressing Command+V — a single keyboard shortcut. Do not click anything, "
+              "open any menu, or focus any other field; just press Command+V once. Then you are finished.")
+    last = "unknown"
+    for attempt in range(1, attempts + 1):
+        desktop_cu.ensure_app(native_app)                 # launch it
+        _new_textedit_doc(native_app)                     # fresh, focused blank doc to paste into
+        with tempfile.TemporaryDirectory() as tmp:
+            trace_path = os.path.join(tmp, "desktop_segment.json")
+            try:
+                desktop_cu.run(intent, trace_path=trace_path, max_turns=max_turns)
+            except Exception as exc:                      # API / model safety block / etc. — retry
+                last = f"doer error: {type(exc).__name__}: {str(exc)[:80]}"
+                print(f"  [desktop] attempt {attempt}: {last}", flush=True); continue
+            trace = json.load(open(trace_path, encoding="utf-8")) if os.path.exists(trace_path) else {}
+        if str(trace.get("metrics", {}).get("final", "")).startswith("ABORTED"):
+            last = "aborted (stuck)"; print(f"  [desktop] attempt {attempt}: {last}", flush=True); continue
+        from .world_verifiers import read_textedit
+        if marker.lower() not in read_textedit(native_app).lower():
+            last = "marker not in document"; print(f"  [desktop] attempt {attempt}: {last}", flush=True); continue
+        traj = _desktop_trace_to_traj(trace)
+        skill = compile_fused(traj, surface="desktop", name="hybrid_write_note", params={},
+                              verify={"kind": "textedit", "contains": marker})
+        skill.target = native_app                         # replay re-opens it before driving
+        print(f"  [desktop] learned in {attempt} attempt(s)", flush=True)
+        return HybridSegment(role="write_textedit_note", surface="desktop", skill=skill)
+    raise HybridLearnError(f"desktop segment failed after {attempts} attempts (last: {last})")
 
 
 def learn(url: str, native_app: str = "TextEdit", *, visible: bool = True) -> HybridSkill:
@@ -184,18 +187,27 @@ def learn(url: str, native_app: str = "TextEdit", *, visible: bool = True) -> Hy
         browser = p.chromium.launch(headless=not visible)
         page = browser.new_context(viewport={"width": VIEWPORT[0], "height": VIEWPORT[1]}).new_page()
         page.goto(url, wait_until="domcontentloaded")
-        title = page.title().strip()
-        if len(title) < 4:                                # need a usable, verifiable ground-truth value
+        # The verification ground truth is the page's main HEADING — what Gemini selects — which on
+        # real pages differs from the <title> (Wikipedia: "X" vs "X - Wikipedia"). Fall back to the
+        # <title> only if there is no usable <h1>.
+        marker = ""
+        try:
+            if page.locator("h1").count():
+                marker = page.locator("h1").first.inner_text(timeout=3000).strip()
+        except Exception:
+            marker = ""
+        marker = marker or page.title().strip()
+        if len(marker) < 4:
             browser.close()
-            raise HybridLearnError(f"page has no usable title to verify against: {title!r}")
-        print(f"[learn] page title (verification ground truth): {title!r}", flush=True)
-        print("[learn] browser segment — Gemini copying the title…", flush=True)
-        browser_seg = _browser_segment(page, url, title)
+            raise HybridLearnError(f"page has no usable heading to verify against: {marker!r}")
+        print(f"[learn] verification ground truth (heading): {marker!r}", flush=True)
+        print("[learn] browser segment — Gemini selecting + copying the heading…", flush=True)
+        browser_seg = _browser_segment(page, url, marker)
         browser.close()
     # the title is now on the OS clipboard; the desktop segment pastes + we verify it landed
     print("[learn] desktop segment — Gemini writing the note in TextEdit…", flush=True)
-    desktop_seg = _desktop_segment(native_app, marker=title)
-    return HybridSkill(name="real_web_to_native_note", goal=f"Copy the title of {url} into a {native_app} note",
+    desktop_seg = _desktop_segment(native_app, marker=marker)
+    return HybridSkill(name="real_web_to_native_note", goal=f"Copy the heading of {url} into a {native_app} note",
                        url=url, segments=[browser_seg, desktop_seg],
                        learned_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
 
