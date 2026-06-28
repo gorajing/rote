@@ -47,18 +47,21 @@ def _spatial(s, action: str) -> Step:
     0..COORD_MAX coords in args + a Precondition crop (PNG b64) around the pixel target so replay
     can re-localize it model-free."""
     args = s.args or {}
-    nx, ny = args.get("x"), args.get("y")
+    nx = args.get("x", args.get("start_x"))      # CU drags anchor on start_x/start_y, not x/y
+    ny = args.get("y", args.get("start_y"))
     sargs: dict = {}
     if nx is not None and ny is not None:
         sargs["x"], sargs["y"] = int(nx), int(ny)
     n = (s.action or "").lower()
     if action == "drag":
-        dx = args.get("destination_x", args.get("dest_x"))
-        dy = args.get("destination_y", args.get("dest_y"))
+        dx = args.get("destination_x", args.get("dest_x", args.get("end_x")))
+        dy = args.get("destination_y", args.get("dest_y", args.get("end_y")))
         if dx is not None:
-            sargs["destination_x"] = int(dx)
+            sargs["dest_x"] = int(dx)            # dest_x/dest_y: read by BOTH browser + desktop executors
         if dy is not None:
-            sargs["destination_y"] = int(dy)
+            sargs["dest_y"] = int(dy)
+    elif "triple" in n:
+        sargs["clicks"] = 3
     elif "double" in n:
         sargs["clicks"] = 2
     elif "right" in n:

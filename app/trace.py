@@ -30,7 +30,8 @@ def state_hash(page) -> str:
 def record_step(traj: Trajectory, turn: int, fname: str, args: dict, page, screenshot_path: str):
     """Append one annotated step to the trajectory. coords are the denormalized pixel target
     (None for non-spatial actions like type/navigate)."""
-    x, y = args.get("x"), args.get("y")
+    x = args.get("x", args.get("start_x"))   # CU drags carry start_x/start_y (no plain x/y)
+    y = args.get("y", args.get("start_y"))
     coords = (int(x / 1000 * VIEWPORT[0]), int(y / 1000 * VIEWPORT[1])) if x is not None and y is not None else None
     traj.steps.append(Step(
         turn=turn,

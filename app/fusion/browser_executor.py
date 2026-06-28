@@ -153,6 +153,13 @@ class BrowserExecutor:
                 end_px = denorm(ex, ey)
             else:
                 fname = action if action in _CLICK_FNAMES else "click"
+                if fname == "click":          # the spatial primitive folds sub-actions into args
+                    if args.get("clicks") == 3:
+                        fname = "triple_click"
+                    elif args.get("clicks") == 2 or args.get("double"):
+                        fname = "double_click"
+                    elif args.get("button") == "right":
+                        fname = "right_click"
                 res = execute_action(self.page, fname, {"x": x, "y": y})
                 end_px = None
 

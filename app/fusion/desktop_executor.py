@@ -105,6 +105,8 @@ class DesktopExecutor:
             # click family — forgiving on button/double via args
             if args.get("button") == "right":
                 pyautogui.click(px, py, button="right")
+            elif args.get("clicks") == 3:
+                pyautogui.tripleClick(px, py)
             elif args.get("double") or args.get("clicks") == 2:
                 pyautogui.doubleClick(px, py)
             else:
