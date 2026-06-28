@@ -71,6 +71,20 @@ def _localize(shot_bytes: bytes, crop_b64: str):
         return 0, 0, 0.0
 
 
+def _localize_live(executor, crop_b64: str, threshold: float):
+    """Localize the crop on a fresh screenshot; on a MISS, SETTLE once and look again before giving
+    up. A one-frame transient — a popup mid-animation, a control not yet painted — clears on the
+    retry and matches at 0 CU, so it never escalates (and so never triggers a mistaken heal). A real
+    drift misses BOTH looks and falls through to escalation. Returns the better of the two looks."""
+    nx, ny, score = _localize(executor.screenshot(), crop_b64)
+    if score < threshold:
+        executor.settle()
+        nx2, ny2, score2 = _localize(executor.screenshot(), crop_b64)
+        if score2 > score:
+            return nx2, ny2, score2
+    return nx, ny, score
+
+
 CROP_W, CROP_H = 160, 90   # healed-crop box (matches app.skill_compiler's target-crop size)
 
 
@@ -95,9 +109,35 @@ def _extract_crop(shot_bytes: bytes, nx: int, ny: int):
 def _is_distinctive(crop_b64: str) -> bool:
     """A crop with real texture (pixel variance) re-localizes to a UNIQUE spot; a flat/low-texture
     crop matches almost anywhere and, if baked in, would HIT the wrong place forever (self-heal could
-    never recover it). So only a heal crop carrying enough signal to re-find itself is persisted."""
+    never recover it). Cheap pre-filter before the costlier uniqueness check below."""
     try:
         return float(_decode(crop_b64).std()) >= 12.0   # flat UI regions sit near 0; real targets >> this
+    except Exception:
+        return False
+
+
+PEAK_MARGIN = 0.15   # a heal crop's best match must beat the next-best LOCATION by at least this
+
+
+def _localizes_uniquely(shot_bytes: bytes, crop_b64: str) -> bool:
+    """Only bake a heal crop that re-finds ONE place. Re-match the freshly-cut crop on the shot it
+    came from: it peaks at its own location (~1.0); the real question is whether any OTHER location
+    matches nearly as well. A repeated UI element or a flat region leaves a second peak almost as
+    high — on a later replay the crop could localize to the WRONG instance — so reject it (keep the
+    prior crop; the step just re-escalates next time, bounded at 1 CU). A genuinely distinctive target
+    beats everywhere else by a clear margin. This is what makes whole-run-verify safe to apply
+    per-step: a re-ground that produced an ambiguous target is dropped even if the run verified."""
+    try:
+        shot = cv2.imdecode(np.frombuffer(shot_bytes, np.uint8), cv2.IMREAD_COLOR)
+        crop = _decode(crop_b64)
+        res = cv2.matchTemplate(shot, crop, cv2.TM_CCOEFF_NORMED)
+        _, peak, _, loc = cv2.minMaxLoc(res)
+        ch, cw = crop.shape[:2]
+        # blank the winning peak's neighbourhood, then find the best match ELSEWHERE
+        res[max(0, loc[1] - ch // 2): loc[1] + ch // 2 + 1,
+            max(0, loc[0] - cw // 2): loc[0] + cw // 2 + 1] = -1.0
+        _, second, _, _ = cv2.minMaxLoc(res)
+        return peak >= 0.9 and (peak - second) >= PEAK_MARGIN
     except Exception:
         return False
 
@@ -234,7 +274,7 @@ def replay(skill: FusedSkill, executor: Executor, verifier: Verifier, *,
                 # Crop-localize the visual precondition on the LIVE screen (0 model). HIT -> click
                 # the re-grounded target; MISS (drift) or no precondition -> escalate one step.
                 if crop:
-                    nx, ny, score = _localize(executor.screenshot(), crop)
+                    nx, ny, score = _localize_live(executor, crop, threshold)   # one settle-retry first
                     if score >= threshold:
                         out = executor.click_at(nx, ny, primitive, step.args)
                         _emit(StepResult(index=i, primitive=primitive, tier="crop",
@@ -244,7 +284,9 @@ def replay(skill: FusedSkill, executor: Executor, verifier: Verifier, *,
                         cu_calls += 1
                         if heal and _ok(res) and res.get("_heal_coords") and step.pre is not None:
                             fresh = _extract_crop(res["_heal_shot"], *res["_heal_coords"])
-                            if fresh and _is_distinctive(fresh):   # don't bake a flat 'hit-anywhere' crop
+                            # bake the re-cut crop only if it is BOTH textured and uniquely locatable —
+                            # never a flat or repeated-UI target that could mis-localize on a later run
+                            if fresh and _is_distinctive(fresh) and _localizes_uniquely(res["_heal_shot"], fresh):
                                 pending_heals[i] = fresh           # applied later iff the whole run verifies
                         _emit(StepResult(index=i, primitive=primitive, tier="model",
                                                   cu_calls=1, score=score, ok=_ok(res)))
