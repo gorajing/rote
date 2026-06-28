@@ -99,6 +99,36 @@ def recall_load(intent: str, *, store: FusionSkillStore | None = None, root=_DEF
     return store.load_active(matches[0]["name"]), matches[0]
 
 
+def promote_and_index(store: FusionSkillStore, skill, intent: str, *, verified: bool,
+                      cu_calls: int = 0, reason: str = "promote", root=_DEFAULT_ROOT) -> dict:
+    """Promote a verified skill AND index its intent for recall, so a learned skill is immediately
+    recallable (closes the 'recalled in plain language' gap). Use for COLD-learned skills; a self-heal
+    keeps the same intent and persists via save_promoted directly (run_with_recall)."""
+    rec = store.save_promoted(skill, verified=verified, cu_calls=cu_calls, reason=reason)
+    index_skill(skill.name, intent, root=root)
+    return rec
+
+
+def run_with_recall(intent: str, executor, verifier, *, store: FusionSkillStore | None = None,
+                    root=_DEFAULT_ROOT, heal: bool = True) -> dict:
+    """The CLOSED self-improving loop: recall a learned skill by intent -> replay at 0 CU, SELF-
+    HEALING on drift -> PERSIST the heal as a new version iff it re-verified, so the NEXT run is
+    back to 0 CU. On a recall miss returns needs_cold_learn=True (the caller cold-learns then
+    promote_and_index). The recalled skill is already indexed, so a heal only bumps its version —
+    no re-index needed."""
+    from .dispatch import replay                       # lazy: keep cv2 off recall's index/query path
+    store = store or FusionSkillStore(root)
+    skill, match = recall_load(intent, store=store, root=root)
+    if skill is None:
+        return {"recalled": None, "score": 0.0, "needs_cold_learn": True, "verified": False,
+                "cu_calls": 0, "healed": [], "needs_recompile": True, "steps": []}
+    res = replay(skill, executor, verifier, heal=heal)
+    if heal and res["verified"] and res["healed"]:
+        store.save_promoted(skill, verified=True, cu_calls=res["cu_calls"],
+                            reason=f"self-heal: re-grounded steps {res['healed']}")
+    return {"recalled": match["name"], "score": match["score"], "needs_cold_learn": False, **res}
+
+
 def backfill_from_tasks(*, root=_DEFAULT_ROOT) -> int:
     """One-shot seed: index every stored fusion skill using its arena task intent. Skills are named
     fused_<task_id>, so we recover the goal text from app.tasks without re-promoting anything."""
