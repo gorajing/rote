@@ -1,0 +1,20 @@
+{
+  "name": "create_word_file",
+  "app": "Microsoft Word",
+  "os": "macos",
+  "note": "Keyboard-first replay: NO screenshots, NO model calls. The model only gets invoked if the post-replay success check fails (self-heal).",
+  "params": {"text": "Hello from Gemini Computer Use.", "filename": "gemini", "location": "Desktop"},
+  "steps": [
+    {"op": "open_app", "app": "Microsoft Word", "why": "launch Word reliably (no Spotlight hotkey gamble)"},
+    {"op": "wait", "seconds": 6, "why": "wait for Word to finish launching"},
+    {"op": "hotkey", "keys": ["command", "n"], "why": "new blank document (skips the template gallery)"},
+    {"op": "wait", "seconds": 2, "why": "wait for the blank document"},
+    {"op": "type", "text": "Hello from Gemini Computer Use.", "why": "write the content"},
+    {"op": "hotkey", "keys": ["command", "s"], "why": "open the save dialog"},
+    {"op": "wait", "seconds": 2, "why": "wait for the save sheet"},
+    {"op": "type", "text": "gemini", "why": "set the filename (name field is focused by default)"},
+    {"op": "hotkey", "keys": ["command", "d"], "why": "jump to Desktop (standard macOS save-dialog shortcut)"},
+    {"op": "key", "key": "return", "why": "confirm save"},
+    {"op": "wait", "seconds": 2, "why": "let the write finish"}
+  ]
+}
