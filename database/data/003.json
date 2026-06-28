@@ -1,0 +1,39 @@
+{
+  "name": "create_budget_spreadsheet_excel",
+  "site": "excel",
+  "goal_template": "Create a monthly budget spreadsheet for {month_year} with income and expense sections, a net-savings summary, and a bar chart",
+  "params": [
+    {"name": "month_year",    "type": "str",  "required": true},
+    {"name": "income_items",  "type": "list", "required": false},
+    {"name": "expense_items", "type": "list", "required": false}
+  ],
+  "preconditions": {
+    "url_pattern": null,
+    "landmarks": ["Excel ribbon", "formula bar", "sheet tabs"]
+  },
+  "steps": [
+    {"intent": "Open a new blank Excel workbook",                             "action": "click",     "target_desc": "New Blank Workbook button on the start screen", "param_ref": null},
+    {"intent": "Rename the default sheet to 'Budget'",                        "action": "type",      "target_desc": "sheet tab (double-click to rename)",           "param_ref": null},
+    {"intent": "Enter the spreadsheet title in cell A1",                      "action": "type",      "target_desc": "cell A1",                                      "param_ref": "month_year"},
+    {"intent": "Build the INCOME section header and row labels (A3:A7)",      "action": "type",      "target_desc": "cells A3 through A7",                          "param_ref": "income_items"},
+    {"intent": "Enter a SUM formula for total income in B7",                  "action": "type",      "target_desc": "cell B7",                                      "param_ref": null},
+    {"intent": "Build the EXPENSES section header and row labels (A9:A17)",   "action": "type",      "target_desc": "cells A9 through A17",                         "param_ref": "expense_items"},
+    {"intent": "Enter a SUM formula for total expenses in B17",               "action": "type",      "target_desc": "cell B17",                                     "param_ref": null},
+    {"intent": "Enter the NET SAVINGS formula =B7-B17 in B19",               "action": "type",      "target_desc": "cell B19",                                     "param_ref": null},
+    {"intent": "Format the B column range as Currency with 2 decimal places", "action": "click",     "target_desc": "Format Cells dialog > Currency tab",           "param_ref": null},
+    {"intent": "Insert a clustered bar chart comparing income and expenses",   "action": "click",     "target_desc": "Insert > Chart > Clustered Bar",               "param_ref": null},
+    {"intent": "Apply conditional formatting to B19 (green/red on sign)",     "action": "click",     "target_desc": "Conditional Formatting > New Rule on B19",     "param_ref": null},
+    {"intent": "Save the workbook as an .xlsx file",                          "action": "press_key", "target_desc": "Ctrl+S / Cmd+S keyboard shortcut",            "param_ref": null}
+  ],
+  "success_checks": [
+    "Workbook saved as Budget_[MonthYear].xlsx without errors",
+    "B7 displays the correct sum of income rows",
+    "B17 displays the correct sum of expense rows",
+    "B19 reflects B7 minus B17 and is colour-coded by sign",
+    "Bar chart is visible on the sheet and labelled correctly"
+  ],
+  "embedding": [],
+  "stats": {"uses": 3, "successes": 3, "failures": 0, "success_rate": 1.0, "avg_steps": 12.0},
+  "version": 1,
+  "status": "active"
+}

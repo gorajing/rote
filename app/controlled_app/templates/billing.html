@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}AcmeBilling — Invoices{% endblock %}
+{% block page_title %}Invoices{% endblock %}
+{% block page_sub %}<div class="sub">Manage customer invoices, disputes, and receipts</div>{% endblock %}
+
+{% block content %}
+  <section class="kpis">
+    <div class="kpi accent">
+      <div class="label">Outstanding</div>
+      <div class="value">${{ "{:,.2f}".format(kpis.outstanding) }}</div>
+      <div class="meta">across {{ kpis.total_count }} invoices</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Unpaid</div>
+      <div class="value">{{ kpis.unpaid_count }}</div>
+      <div class="meta">awaiting payment</div>
+    </div>
+    <div class="kpi danger">
+      <div class="label">Disputed</div>
+      <div class="value">{{ kpis.disputed_count }}</div>
+      <div class="meta">need review</div>
+    </div>
+  </section>
+
+  <div class="filter-bar" id="status-filter">
+    <span class="filter-label">Status:</span>
+    <a href="{{ url_for('billing', status='paid') }}"
+       class="filter-chip {% if ui_filter == 'paid' %}active{% endif %}" id="filter-paid">Paid</a>
+    <a href="{{ url_for('billing', status='unpaid') }}"
+       class="filter-chip {% if ui_filter == 'unpaid' %}active{% endif %}" id="filter-unpaid">Unpaid</a>
+    <a href="{{ url_for('billing', status='all') }}"
+       class="filter-chip {% if ui_filter == 'all' %}active{% endif %}" id="filter-all">All</a>
+    <span class="filter-meta">Showing {{ invoices | length }} of {{ all_count }} records</span>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h3 id="page-title">Invoice list</h3>
+    </div>
+    <div class="table-scroll">
+      <table id="invoice-table">
+        <thead>
+          <tr>
+            <th>Invoice ID</th>
+            <th>Customer</th>
+            <th>Status</th>
+            <th>Amount</th>
+            <th>Note</th>
+            <th>Exported</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for inv in invoices %}
+          <tr id="row-{{ inv.id }}" data-customer="{{ inv.customer }}" data-amount="{{ inv.amount }}">
+            <td><span class="mono">{{ inv.id }}</span></td>
+            <td>
+              {% if structural %}
+              <a href="{{ url_for('invoice_detail', invoice_id=inv.id) }}" class="cust-link">
+                <strong>{{ inv.customer }}</strong>
+              </a>
+              {% else %}
+              <span class="cust">{{ inv.customer }}</span>
+              {% endif %}
+            </td>
+            <td><span class="status status-{{ inv.status }}">{{ inv.status }}</span></td>
+            <td><span class="amount">${{ "{:,.2f}".format(inv.amount) }}</span></td>
+            <td>{% if inv.note %}{{ inv.note }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>
+              {% if inv.exported %}<span class="pill pill-yes">Yes</span>
+              {% else %}<span class="pill pill-no">No</span>{% endif %}
+            </td>
+            <td class="actions">
+              {% include "_kebab_actions.html" %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll('.kebab-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const menu = btn.nextElementSibling;
+      document.querySelectorAll('.kebab-menu').forEach(m => {
+        if (m !== menu) m.classList.remove('open');
+      });
+      menu.classList.toggle('open');
+    });
+  });
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.kebab-menu').forEach(m => m.classList.remove('open'));
+  });
+</script>
+{% endblock %}

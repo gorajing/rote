@@ -1,28 +1,52 @@
 #!/usr/bin/env python3
-"""
-Rote Database API — query agent instruction files by metadata.
+"""Local Skill lookup and MongoDB Atlas vector search APIs.
 
-Usage (CLI):
-    python api.py web
-    python api.py web --address amazon
-    python api.py web --purpose buy
-    python api.py web --address facebook --purpose communicate --content
+The local ``query`` API remains available for deterministic, offline Skill
+lookup. ``push`` and ``retrieve`` provide semantic storage and search using
+Gemini embeddings stored in MongoDB Atlas.
 
-Usage (Python):
-    from database.api import query
-    results = query(platform="web", address="amazon", include_content=True)
+Python examples::
+
+    query(platform="web", address="amazon", load_skill=True)
+    push({"title": "Amazon", "description": "Buy headphones"})
+    retrieve("how to buy headphones", top_k=3)
+
+CLI examples::
+
+    python database/api.py local web --address amazon --skill
+    python database/api.py push '{"description": "buy headphones"}'
+    python database/api.py retrieve "how to buy headphones" --top-k 3
 """
-import json
 import argparse
+import json
+import sys
 from pathlib import Path
 from typing import Optional
+
+from dotenv import load_dotenv
+from google import genai
+from pymongo import MongoClient
+from pymongo.collection import Collection
+
+# Allow running as ``python database/api.py`` from the repository root.
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from app import config  # noqa: E402
+from app.schemas import Skill  # noqa: E402
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 _DB_DIR = Path(__file__).parent
 _INDEX_PATH = _DB_DIR / "index.json"
 _DATA_DIR = _DB_DIR / "data"
+_VECTOR_INDEX = "description"
+_VECTOR_PATH = "embedding"
+_EMBED_MODEL = "gemini-embedding-2"
 
 VALID_PLATFORMS = {"web", "excel", "adobe", "apple_email", "whatsapp"}
 VALID_PURPOSES = {"buy", "generate", "communicate"}
+
+_mongo_client: Optional[MongoClient] = None
+_genai_client: Optional[genai.Client] = None
 
 
 def _load_index() -> list[dict]:
@@ -30,33 +54,26 @@ def _load_index() -> list[dict]:
         return json.load(f)["entries"]
 
 
+def _entry_to_skill(entry: dict) -> Skill:
+    data = json.loads((_DATA_DIR / entry["filename"]).read_text(encoding="utf-8"))
+    return Skill(**data)
+
+
 def query(
     platform: str,
     address: Optional[str] = None,
     purpose: Optional[str] = None,
-    include_content: bool = False,
-) -> list[dict]:
-    """
-    Search the index and return matching entries.
-
-    Args:
-        platform:        Required. One of: web, excel, adobe, apple_email, whatsapp.
-        address:         Optional. Website identifier (e.g. amazon, ebay, facebook, youtube, booking).
-                         Only meaningful when platform is "web".
-        purpose:         Optional. One of: buy, generate, communicate.
-        include_content: If True, each result includes a "content" key with the raw instruction text.
-
-    Returns:
-        List of matching entry dicts. Each dict contains all index metadata;
-        if include_content is True, a "content" key is added.
-
-    Raises:
-        ValueError: if platform or purpose are not valid known values.
-    """
+    load_skill: bool = False,
+) -> list[dict | Skill]:
+    """Query the repository's local Skill index by exact metadata."""
     if platform not in VALID_PLATFORMS:
-        raise ValueError(f"Invalid platform '{platform}'. Must be one of: {', '.join(sorted(VALID_PLATFORMS))}")
+        raise ValueError(
+            f"Invalid platform '{platform}'. Choose from: {', '.join(sorted(VALID_PLATFORMS))}"
+        )
     if purpose is not None and purpose not in VALID_PURPOSES:
-        raise ValueError(f"Invalid purpose '{purpose}'. Must be one of: {', '.join(sorted(VALID_PURPOSES))}")
+        raise ValueError(
+            f"Invalid purpose '{purpose}'. Choose from: {', '.join(sorted(VALID_PURPOSES))}"
+        )
 
     results = []
     for entry in _load_index():
@@ -66,85 +83,117 @@ def query(
             continue
         if purpose is not None and entry["purpose"] != purpose:
             continue
-
-        result = dict(entry)
-        if include_content:
-            result["content"] = (_DATA_DIR / entry["filename"]).read_text(encoding="utf-8")
-
-        results.append(result)
-
+        results.append(_entry_to_skill(entry) if load_skill else dict(entry))
     return results
 
 
-def _print_results(results: list[dict]) -> None:
+def _genai() -> genai.Client:
+    global _genai_client
+    if _genai_client is None:
+        _genai_client = genai.Client()
+    return _genai_client
+
+
+def _embed(text: str) -> list[float]:
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Text to embed must be a non-empty string")
+    result = _genai().models.embed_content(model=_EMBED_MODEL, contents=text)
+    return result.embeddings[0].values
+
+
+def _collection() -> Collection:
+    global _mongo_client
+    if _mongo_client is None:
+        if not config.MONGO_URI:
+            raise RuntimeError("ROTE_MONGO_URI is not set in environment")
+        _mongo_client = MongoClient(config.MONGO_URI)
+    return _mongo_client[config.DB_NAME][config.INSTRUCTIONS_COLLECTION]
+
+
+def push(doc: dict) -> str:
+    """Insert or upsert a document and its description embedding."""
+    if not isinstance(doc, dict):
+        raise TypeError("Document must be a dictionary")
+    description = doc.get("description")
+    if not isinstance(description, str) or not description.strip():
+        raise ValueError("Document must include a non-empty 'description' field")
+
+    document = {**doc, _VECTOR_PATH: _embed(description)}
+    collection = _collection()
+    if "_id" in document:
+        collection.replace_one({"_id": document["_id"]}, document, upsert=True)
+        return str(document["_id"])
+    return str(collection.insert_one(document).inserted_id)
+
+
+def push_many(docs: list[dict]) -> list[str]:
+    """Push documents in order and return their IDs."""
+    return [push(doc) for doc in docs]
+
+
+def retrieve(search_text: str, top_k: int = 5) -> list[dict]:
+    """Return documents ordered by Atlas vector-search similarity."""
+    if top_k < 1:
+        raise ValueError("top_k must be at least 1")
+    pipeline = [
+        {
+            "$vectorSearch": {
+                "index": _VECTOR_INDEX,
+                "path": _VECTOR_PATH,
+                "queryVector": _embed(search_text),
+                "numCandidates": max(100, top_k * 10),
+                "limit": top_k,
+            }
+        },
+        {"$addFields": {"score": {"$meta": "vectorSearchScore"}}},
+        {"$project": {_VECTOR_PATH: 0}},
+    ]
+    return list(_collection().aggregate(pipeline))
+
+
+def _print_local_results(results: list[dict | Skill]) -> None:
     if not results:
         print("No matching entries found.")
         return
-
-    print(f"Found {len(results)} matching entr{'y' if len(results) == 1 else 'ies'}:\n")
-    for entry in results:
-        print(f"  ID:               {entry['id']}")
-        print(f"  File:             {entry['filename']}")
-        print(f"  Title:            {entry['title']}")
-        print(f"  Platform:         {entry['platform']}")
-        if entry.get("address"):
-            print(f"  Address:          {entry['address']}")
-        print(f"  Purpose:          {entry['purpose']}")
-        print(f"  Date:             {entry['date']}")
-        print(f"  Last validation:  {entry['last_validation']}")
-        print(f"  Validations:      {entry['validations_count']}")
-        if "content" in entry:
-            print(f"\n  {'─' * 60}")
-            print(entry["content"])
-            print(f"  {'─' * 60}")
-        print()
+    for item in results:
+        if isinstance(item, Skill):
+            print(f"{item.name}: {item.goal_template} ({item.status}, v{item.version})")
+        else:
+            print(
+                f"{item['id']}: {item['skill_name']} "
+                f"({item['platform']}, {item['status']}, v{item['version']})"
+            )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Query the Rote agent instruction database.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=(
-            "Examples:\n"
-            "  python api.py web\n"
-            "  python api.py web --address amazon\n"
-            "  python api.py web --purpose buy --content\n"
-            "  python api.py adobe --purpose generate\n"
-        ),
-    )
-    parser.add_argument(
-        "platform",
-        help=f"Platform to filter on (required). One of: {', '.join(sorted(VALID_PLATFORMS))}",
-    )
-    parser.add_argument(
-        "--address",
-        metavar="SITE",
-        help="Website address to filter on (e.g. amazon, ebay, facebook, youtube, booking).",
-    )
-    parser.add_argument(
-        "--purpose",
-        choices=sorted(VALID_PURPOSES),
-        help="Purpose to filter on.",
-    )
-    parser.add_argument(
-        "--content",
-        action="store_true",
-        help="Include the full instruction text in the output.",
-    )
+    parser = argparse.ArgumentParser(description="Rote local and vector database CLI")
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    args = parser.parse_args()
+    local = sub.add_parser("local", help="Query the repository's local Skill index")
+    local.add_argument("platform", choices=sorted(VALID_PLATFORMS))
+    local.add_argument("--address", metavar="SITE")
+    local.add_argument("--purpose", choices=sorted(VALID_PURPOSES))
+    local.add_argument("--skill", action="store_true", help="Load full Skill objects")
 
-    try:
-        results = query(
-            platform=args.platform,
-            address=args.address,
-            purpose=args.purpose,
-            include_content=args.content,
-        )
-    except ValueError as exc:
-        parser.error(str(exc))
+    push_parser = sub.add_parser("push", help="Push a JSON document to Atlas")
+    push_parser.add_argument("doc", help='JSON object with a "description" field')
 
-    _print_results(results)
+    retrieve_parser = sub.add_parser("retrieve", help="Search Atlas semantically")
+    retrieve_parser.add_argument("search_text", help="Natural-language search text")
+    retrieve_parser.add_argument("--top-k", type=int, default=5, metavar="N")
+    argv = sys.argv[1:]
+    # Preserve the original CLI form: ``database/api.py web --address amazon``.
+    if argv and argv[0] in VALID_PLATFORMS:
+        argv.insert(0, "local")
+    args = parser.parse_args(argv)
+
+    if args.command == "local":
+        _print_local_results(query(args.platform, args.address, args.purpose, args.skill))
+    elif args.command == "push":
+        print(f"Pushed: {push(json.loads(args.doc))}")
+    else:
+        for result in retrieve(args.search_text, args.top_k):
+            print(json.dumps(result, default=str, ensure_ascii=False))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,18 @@
+<div class="kebab-wrap">
+  <button type="button" class="kebab-btn" id="kebab-{{ inv.id }}" aria-label="Actions">&#8942;</button>
+  <div class="kebab-menu">
+    <form action="{{ url_for('invoice_flag', invoice_id=inv.id) }}" method="POST">
+      <button type="submit">Flag</button>
+    </form>
+    {% if not structural %}
+    <a href="{{ url_for('invoice_dispute', invoice_id=inv.id) }}">Mark Disputed</a>
+    {% endif %}
+    <a href="{{ url_for('invoice_note', invoice_id=inv.id) }}">Add Note</a>
+    <form action="{{ url_for('invoice_export', invoice_id=inv.id) }}" method="POST">
+      <button type="submit">{{ "Download PDF" if variant == "relabel_export" else "Export receipt" }}</button>
+    </form>
+    <form action="{{ url_for('invoice_refund', invoice_id=inv.id) }}" method="POST">
+      <button type="submit">Refund</button>
+    </form>
+  </div>
+</div>

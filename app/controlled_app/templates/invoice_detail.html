@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Invoice {{ invoice.id }}{% endblock %}
+{% block page_title %}Invoice Detail{% endblock %}
+{% block page_sub %}<div class="sub">{{ invoice.id }} · {{ invoice.customer }}</div>{% endblock %}
+
+{% block content %}
+  <div class="form-card">
+    <div class="form-context">
+      <strong>{{ invoice.customer }}</strong> — ${{ "{:,.2f}".format(invoice.amount) }}
+      · Status: <span class="status status-{{ invoice.status }}">{{ invoice.status }}</span>
+    </div>
+    {% if structural %}
+    <a href="{{ url_for('case_dispute', invoice_id=invoice.id) }}"
+       class="btn btn-primary" id="btn-open-dispute-case">Open dispute case</a>
+    {% endif %}
+    <a href="{{ url_for('billing') }}" class="btn btn-refund" style="margin-left:8px">Back to invoices</a>
+  </div>
+{% endblock %}

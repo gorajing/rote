@@ -1,0 +1,34 @@
+{
+  "name": "create_pdf_adobe_acrobat",
+  "site": "adobe",
+  "goal_template": "Convert {source_file} to a PDF using Adobe Acrobat, optionally protect with password {password} and reduce file size for email",
+  "params": [
+    {"name": "source_file",  "type": "str",  "required": true},
+    {"name": "password",     "type": "str",  "required": false},
+    {"name": "reduce_size",  "type": "bool", "required": false}
+  ],
+  "preconditions": {
+    "url_pattern": null,
+    "landmarks": ["Adobe Acrobat Home screen", "Create PDF button", "Tools panel"]
+  },
+  "steps": [
+    {"intent": "Open Adobe Acrobat",                                      "action": "navigate",  "target_desc": "Acrobat app icon",                              "param_ref": null},
+    {"intent": "Initiate PDF creation from a file",                       "action": "click",     "target_desc": "Create PDF button on the Home screen",          "param_ref": null},
+    {"intent": "Select the source file to convert",                       "action": "click",     "target_desc": "file browser dialog — navigate and Open",       "param_ref": "source_file"},
+    {"intent": "Review the converted PDF on the main canvas",             "action": "scroll",    "target_desc": "main document canvas",                          "param_ref": null},
+    {"intent": "Open the Edit PDF tool if content changes are needed",    "action": "click",     "target_desc": "Edit PDF in the right-hand Tools panel",        "param_ref": null},
+    {"intent": "Encrypt the document with a password if one was given",   "action": "click",     "target_desc": "Tools > Protect > Encrypt with Password",       "param_ref": "password"},
+    {"intent": "Reduce the file size if reduce_size flag is set",         "action": "click",     "target_desc": "File > Save As Other > Reduced Size PDF",       "param_ref": "reduce_size"},
+    {"intent": "Save the final PDF to disk",                              "action": "press_key", "target_desc": "Ctrl+Shift+S / Cmd+Shift+S (Save As)",          "param_ref": null}
+  ],
+  "success_checks": [
+    "PDF file saved to the specified location without errors",
+    "File opens and all content from the source document is visible",
+    "Password prompt appears on open if encryption was applied",
+    "File size is reduced compared to source if reduce_size was requested"
+  ],
+  "embedding": [],
+  "stats": {"uses": 2, "successes": 2, "failures": 0, "success_rate": 1.0, "avg_steps": 7.0},
+  "version": 1,
+  "status": "active"
+}

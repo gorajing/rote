@@ -1,0 +1,37 @@
+{
+  "name": "buy_product_amazon",
+  "site": "amazon",
+  "goal_template": "Find {product} on Amazon within {max_price} budget and at least 4-star rating, add to cart and complete purchase",
+  "params": [
+    {"name": "product",   "type": "str",   "required": true},
+    {"name": "max_price", "type": "float", "required": false},
+    {"name": "color",     "type": "str",   "required": false}
+  ],
+  "preconditions": {
+    "url_pattern": "amazon.com",
+    "landmarks": ["search bar", "cart icon", "sign-in indicator"]
+  },
+  "steps": [
+    {"intent": "Navigate to the Amazon homepage",                "action": "navigate",   "target_desc": "address bar",                        "param_ref": null},
+    {"intent": "Enter the product name in the search bar",       "action": "type",       "target_desc": "main search input",                  "param_ref": "product"},
+    {"intent": "Submit the search",                              "action": "press_key",  "target_desc": "search input",                       "param_ref": null},
+    {"intent": "Set the maximum price filter",                   "action": "type",       "target_desc": "max price filter input",              "param_ref": "max_price"},
+    {"intent": "Restrict results to Prime-eligible items",       "action": "click",      "target_desc": "Prime filter checkbox",               "param_ref": null},
+    {"intent": "Restrict results to 4 stars and above",          "action": "click",      "target_desc": "'4 Stars & Up' rating filter link",   "param_ref": null},
+    {"intent": "Open the top-ranked product",                    "action": "click",      "target_desc": "first product tile in results list",  "param_ref": null},
+    {"intent": "Select the requested color variant if provided", "action": "click",      "target_desc": "color selector button",               "param_ref": "color"},
+    {"intent": "Add the item to the shopping cart",              "action": "click",      "target_desc": "Add to Cart button",                  "param_ref": null},
+    {"intent": "Proceed to the checkout flow",                   "action": "click",      "target_desc": "Proceed to Checkout button",          "param_ref": null},
+    {"intent": "Confirm the shipping address",                   "action": "click",      "target_desc": "Use this address button",             "param_ref": null},
+    {"intent": "Finalise the purchase",                          "action": "click",      "target_desc": "Place your order button",             "param_ref": null}
+  ],
+  "success_checks": [
+    "Order confirmation page displayed with an order number",
+    "Confirmation email received at the account email address",
+    "Order appears under 'Returns & Orders' in the account menu"
+  ],
+  "embedding": [],
+  "stats": {"uses": 7, "successes": 6, "failures": 1, "success_rate": 0.857, "avg_steps": 11.4},
+  "version": 1,
+  "status": "active"
+}

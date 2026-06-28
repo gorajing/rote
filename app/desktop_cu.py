@@ -215,35 +215,25 @@ def _uniquify_filename(steps: list) -> list:
 
 
 def replay(macro: dict, on_step=None):
-    """Execute a keyboard-first macro with NO screenshots and NO model calls. This is the
-    'compiled skill' fast path — the whole point of learning a skill once and replaying it.
-    `on_step(i, total, text)` is called at each step so a HUD can narrate progress live.
-    Returns metrics in the same shape as run() so the two are directly comparable."""
-    t0 = time.time()
-    steps = _uniquify_filename(macro.get("steps", []))
-    for i, s in enumerate(steps, 1):
-        op = s["op"]
-        if on_step:
-            on_step(i, len(steps), s.get("why", op))
-        print(f"  [{i:>2}] {op:<8} {s.get('why','')}")
-        if op == "open_app":
-            print("       " + ensure_app(s["app"], float(s.get("launch_wait", 6))))
-        elif op == "wait":
-            cap = float(s.get("seconds", 2))
-            el = settle(max_wait=cap)
-            print(f"       settled in {el:.1f}s (cap {cap:.0f}s)")
-        elif op == "hotkey":
-            pyautogui.hotkey(*[_KEYMAP.get(k.lower(), k.lower()) for k in s["keys"]])
-        elif op == "key":
-            pyautogui.press(_KEYMAP.get(s["key"].lower(), s["key"].lower()))
-        elif op == "type":
-            pyautogui.write(s["text"], interval=0.01)
-    elapsed = time.time() - t0
-    metrics = {"steps": len(steps), "elapsed_s": round(elapsed, 1), "tokens": 0,
-               "model_s": 0.0, "screenshot_s": 0.0, "execute_s": round(elapsed, 1),
-               "model_pct": 0, "used_skill": True, "mode": "replay", "final": "macro replayed"}
-    print(f"\n=== metrics: {json.dumps(metrics)} ===")
-    return metrics
+    """Backward-compatible wrapper around the condition-aware, model-free replay path."""
+    from .verified_replay import replay_verified
+
+    def event(kind, payload):
+        if kind == "step" and on_step:
+            step = payload["step"]
+            on_step(payload["index"], payload["total"], step.get("why", step["op"]))
+
+    result = replay_verified(macro, allow_repair=False, on_event=event)
+    result.update({
+        "tokens": 0,
+        "model_s": 0.0,
+        "screenshot_s": 0.0,
+        "execute_s": result["elapsed_s"],
+        "model_pct": 0,
+        "final": "macro replayed" if result["success"] else "macro verification failed",
+    })
+    print(f"\n=== metrics: {json.dumps({k: v for k, v in result.items() if k != 'failure'}, default=str)} ===")
+    return result
 
 
 def probe() -> bool:
@@ -322,7 +312,7 @@ def run(intent: str, skill_md: str | None = None, max_turns: int | None = None,
             print(f"  [{turn:>2}] {call.name:<18} exec={dt_exec:4.1f}s shot={dt_shot:4.1f}s  {args.get('intent','')}")
             traj.append({"turn": turn, "action": call.name, "intent": args.get("intent", ""), "args": args})
             responses.append({"type": "function_result", "name": call.name, "call_id": call.id,
-                              "result": [{"type": "text", "text": json.dumps(result)},
+                              "result": [{"type": "text", "text": json.dumps({"url": "desktop://macos", **result})},
                                          {"type": "image", "data": shot_b64, "mime_type": "image/png"}]})
         # stuck = same action AND same args repeated (so typing different text isn't flagged)
         recent.append(json.dumps([[c.name, str(dict(c.arguments).get("text", ""))[:24]] for c in calls]))

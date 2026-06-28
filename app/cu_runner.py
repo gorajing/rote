@@ -8,7 +8,7 @@ import json
 from google import genai
 
 from .config import (CU_MODEL, LEGACY_CU_MODEL, USE_LEGACY_CU,
-                     MAX_TURNS, STUCK_AFTER)
+                     MAX_TURNS, STUCK_AFTER, TRACES_DIR)
 from .schemas import Task, Trajectory
 from .executor import execute_action
 from .trace import screenshot_b64, save_screenshot, state_hash, record_step
@@ -38,9 +38,10 @@ def _skill_hint(skills) -> str:
     return "\n".join(lines) + "\n\nGOAL: "
 
 
-def run_task(task: Task, page, skills=None, out_dir="traces") -> Trajectory:
+def run_task(task: Task, page, skills=None, out_dir=TRACES_DIR, max_turns: int = MAX_TURNS) -> Trajectory:
     """Drive Gemini CU through one task on `page`; return the annotated Trajectory.
-    Success is NOT decided here — the deterministic checker fills traj.success afterward."""
+    Success is NOT decided here — the deterministic checker fills traj.success afterward.
+    `max_turns` overrides the global cap — longer structural flows need more actions."""
     traj = Trajectory(task_id=task.id, used_skill=(skills[0].name if skills else None))
     prompt = _skill_hint(skills) + task.intent
 
@@ -55,7 +56,7 @@ def run_task(task: Task, page, skills=None, out_dir="traces") -> Trajectory:
     )
 
     recent = []
-    for turn in range(1, MAX_TURNS + 1):
+    for turn in range(1, max_turns + 1):
         calls = [s for s in interaction.steps if s.type == "function_call"]
         if not calls:                                   # model is done
             traj.final_text = " ".join(
@@ -89,11 +90,20 @@ def run_task(task: Task, page, skills=None, out_dir="traces") -> Trajectory:
             traj.final_text = "ABORTED: stuck (no progress)"
             break
 
-        interaction = _client_lazy().interactions.create(
-            model=_MODEL,
-            previous_interaction_id=interaction.id,
-            input=responses,
-            tools=_TOOL,
-        )
+        try:
+            interaction = _client_lazy().interactions.create(
+                model=_MODEL,
+                previous_interaction_id=interaction.id,
+                input=responses,
+                tools=_TOOL,
+            )
+        except Exception as e:
+            # The CU API rejects a continuation once the task is already complete
+            # ("no further action to perform"). That's a normal terminal state for a
+            # multi-step task, not a crash — treat it as graceful completion.
+            if "already complete" in str(e) or "no further action" in str(e):
+                traj.final_text = traj.final_text or "Task complete (no further action)."
+                break
+            raise
 
     return traj

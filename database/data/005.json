@@ -1,0 +1,36 @@
+{
+  "name": "send_email_apple_mail",
+  "site": "apple_email",
+  "goal_template": "Compose and send an email in Apple Mail to {recipient_email} with subject '{subject}' and the specified body",
+  "params": [
+    {"name": "recipient_email", "type": "str", "required": true},
+    {"name": "subject",         "type": "str", "required": true},
+    {"name": "body",            "type": "str", "required": true},
+    {"name": "cc",              "type": "str", "required": false},
+    {"name": "attachment_path", "type": "str", "required": false}
+  ],
+  "preconditions": {
+    "url_pattern": null,
+    "landmarks": ["toolbar compose button", "mailbox sidebar", "message list pane"]
+  },
+  "steps": [
+    {"intent": "Open the Mail application",                                       "action": "navigate",  "target_desc": "Mail app icon in Dock / Applications",       "param_ref": null},
+    {"intent": "Open a new compose window",                                       "action": "click",     "target_desc": "compose pencil-and-paper icon in toolbar",   "param_ref": null},
+    {"intent": "Enter the primary recipient email address in the To field",       "action": "type",      "target_desc": "To: field",                                  "param_ref": "recipient_email"},
+    {"intent": "Enter a CC address if provided",                                  "action": "type",      "target_desc": "Cc: field",                                  "param_ref": "cc"},
+    {"intent": "Enter the email subject line",                                    "action": "type",      "target_desc": "Subject: field",                             "param_ref": "subject"},
+    {"intent": "Click into the message body area",                                "action": "click",     "target_desc": "message body area below the subject field",  "param_ref": null},
+    {"intent": "Type the message body",                                           "action": "type",      "target_desc": "message body text area",                     "param_ref": "body"},
+    {"intent": "Attach a file by dragging it onto the compose window if needed",  "action": "click",     "target_desc": "paperclip attachment icon in toolbar",       "param_ref": "attachment_path"},
+    {"intent": "Send the email",                                                  "action": "press_key", "target_desc": "Cmd+Shift+D keyboard shortcut",              "param_ref": null}
+  ],
+  "success_checks": [
+    "Email appears in the Sent mailbox with correct recipient and subject",
+    "No delivery failure bounce-back received within 5 minutes",
+    "Attachments (if any) are listed on the sent copy"
+  ],
+  "embedding": [],
+  "stats": {"uses": 6, "successes": 6, "failures": 0, "success_rate": 1.0, "avg_steps": 8.5},
+  "version": 1,
+  "status": "active"
+}

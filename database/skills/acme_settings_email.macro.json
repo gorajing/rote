@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "surface": "browser",
+  "name": "acme_settings_email",
+  "app": "AcmeBilling",
+  "os": "any",
+  "version": 1,
+  "parent_version": null,
+  "status": "active",
+  "note": "Change and verify the billing email through a semantic browser workflow.",
+  "start_url": "http://localhost:8800/settings",
+  "reset": {"type": "http", "url": "http://localhost:8800/reset?variant=baseline", "method": "POST", "start_url": "http://localhost:8800/settings"},
+  "params": {"billing_email": "finance@acme.com"},
+  "checker": {"type": "http_json", "url": "http://localhost:8800/state", "equals": {"settings.billing_email": "{{billing_email}}"}},
+  "stats": {"uses": 0, "successes": 0, "failures": 0, "success_rate": 0.0, "avg_duration": 0.0, "model_calls": 0},
+  "steps": [
+    {"id": "open_settings", "op": "navigate", "url": "http://localhost:8800/settings", "precondition": {}, "postcondition": {"url_contains": "/settings", "text_contains": "Billing preferences"}, "timeout": 8, "retry_limit": 1, "fallback": [], "why": "Open billing settings"},
+    {"id": "set_billing_email", "op": "fill", "target": {"label": "Billing email"}, "text": "{{billing_email}}", "precondition": {"element_visible": "Billing email"}, "postcondition": {"element_visible": "Billing email"}, "timeout": 5, "retry_limit": 0, "fallback": [], "why": "Enter the requested billing email"},
+    {"id": "save_settings", "op": "click", "target": {"role": "button", "name": "Save Settings"}, "precondition": {"element_visible": "Save Settings"}, "postcondition": {"url_contains": "/settings", "text_contains": "Settings updated"}, "timeout": 5, "retry_limit": 0, "fallback": [], "why": "Save the settings"}
+  ]
+}
