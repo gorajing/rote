@@ -1,35 +1,37 @@
 """A premium Dynamic-Island-style overlay that MERGES with the MacBook notch (AppKit / PyObjC).
 
-vs. a floating pill, this panel sits flush against the screen top and is masked to a custom
-shape — square top corners that blend into the black notch, rounded bottom — so it reads as the
-notch *growing downward*. Built with the techniques the native notch apps use:
-  - NSVisualEffectView dark material, masked to the notch shape -> frosted glass in the right shape
-  - Core Animation layers (CAShapeLayer / CATextLayer) -> GPU-smooth, crisp at retina
-  - a CABasicAnimation rotating-arc spinner -> buttery, no timer redraw
-  - hairline border along the shape + soft shadow + grow-in fade
+Motion follows Emil Kowalski's design-engineering principles (the skill explicitly names Apple's
+Dynamic Island as the canonical spring-based "alive" component):
+  - SPRING entrance (scale 0.9 -> 1 + opacity), anchored at the TOP so it grows OUT of the notch
+  - strong ease-out curves, not the weak built-ins
+  - STAGGERED inner content (spinner -> text -> progress) so it cascades, not pops
+  - faster spinner (feels faster), subtle completion pop, snappier exit than entrance
+  - honors prefers-reduced-motion (gentler, not zero)
+Plus the visual craft: NSVisualEffectView frosted glass masked to the notch shape, Core-Animation
+layers (crisp at retina), hairline border + soft shadow.
 
-The replay runs on a worker thread and pushes status into STATE; a light main-thread timer syncs
-the text/progress layers. Joins all Spaces, sits above the menu bar, ignores mouse events.
+Joins all Spaces, sits above the menu bar, ignores mouse events (never steals focus).
 """
 import time
 import threading
 
 from AppKit import (
     NSApplication, NSApplicationActivationPolicyAccessory, NSWindow, NSColor, NSFont, NSScreen,
-    NSTimer, NSMakeRect, NSVisualEffectView, NSVisualEffectBlendingModeBehindWindow,
+    NSWorkspace, NSTimer, NSMakeRect, NSVisualEffectView, NSVisualEffectBlendingModeBehindWindow,
     NSVisualEffectStateActive, NSAppearance, NSWindowStyleMaskBorderless, NSBackingStoreBuffered,
     NSStatusWindowLevel, NSWindowCollectionBehaviorCanJoinAllSpaces,
     NSWindowCollectionBehaviorStationary, NSWindowCollectionBehaviorFullScreenAuxiliary,
     NSAnimationContext,
 )
 from Quartz import (
-    CAShapeLayer, CATextLayer, CABasicAnimation, CATransaction, CGRectMake,
+    CAShapeLayer, CATextLayer, CABasicAnimation, CASpringAnimation, CATransaction,
+    CAMediaTimingFunction, CACurrentMediaTime, CGRectMake,
     CGPathCreateWithEllipseInRect, CGPathCreateMutable, CGPathMoveToPoint,
     CGPathAddLineToPoint, CGPathAddArcToPoint, CGPathCloseSubpath,
 )
 
-W, H, RB = 330.0, 64.0, 24.0      # width, height, bottom-corner radius
-NOTCH_TOP = 32.0                  # the notch/menubar strip; content must sit BELOW it
+W, H, RB = 330.0, 64.0, 24.0
+NOTCH_TOP = 32.0
 ACCENT = (0.04, 0.52, 1.0)
 GREEN = (0.18, 0.82, 0.36)
 STATE = {"i": 0, "total": 1, "text": "Starting…", "done": False}
@@ -41,6 +43,20 @@ def _cg(rgb, a=1.0):
 
 def _white(a=1.0):
     return NSColor.colorWithCalibratedWhite_alpha_(1.0, a).CGColor()
+
+
+def _ease_out():
+    try:
+        return CAMediaTimingFunction.functionWithControlPoints____(0.23, 1.0, 0.32, 1.0)
+    except Exception:
+        return CAMediaTimingFunction.functionWithName_("easeOut")
+
+
+def _reduce_motion():
+    try:
+        return bool(NSWorkspace.sharedWorkspace().accessibilityDisplayShouldReduceMotion())
+    except Exception:
+        return False
 
 
 def _notch_center(screen):
@@ -55,12 +71,11 @@ def _notch_center(screen):
 
 
 def _notch_path(w, h, rb):
-    """Flush-top (square corners blend into the notch), rounded-bottom shape."""
     p = CGPathCreateMutable()
     CGPathMoveToPoint(p, None, 0, h)
-    CGPathAddLineToPoint(p, None, w, h)                 # top edge (flush with screen top)
-    CGPathAddArcToPoint(p, None, w, 0, 0, 0, rb)        # round bottom-right
-    CGPathAddArcToPoint(p, None, 0, 0, 0, h, rb)        # round bottom-left
+    CGPathAddLineToPoint(p, None, w, h)
+    CGPathAddArcToPoint(p, None, w, 0, 0, 0, rb)
+    CGPathAddArcToPoint(p, None, 0, 0, 0, h, rb)
     CGPathAddLineToPoint(p, None, 0, h)
     CGPathCloseSubpath(p)
     return p
@@ -86,12 +101,14 @@ class NotchIsland:
 
     def run(self, target):
         self._done_at = None
+        self._popped = False
+        self._reduce = _reduce_motion()
         app = NSApplication.sharedApplication()
         app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
         screen = NSScreen.mainScreen()
         sf = screen.frame()
         x = _notch_center(screen) - W / 2.0
-        y = sf.size.height - H                          # FLUSH with the screen top
+        y = sf.size.height - H
 
         win = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(x, y, W, H), NSWindowStyleMaskBorderless, NSBackingStoreBuffered, False)
@@ -107,7 +124,7 @@ class NotchIsland:
 
         fx = NSVisualEffectView.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
         try:
-            fx.setMaterial_(18)                          # NSVisualEffectMaterialHUDWindow
+            fx.setMaterial_(18)
         except Exception:
             pass
         fx.setBlendingMode_(NSVisualEffectBlendingModeBehindWindow)
@@ -117,16 +134,14 @@ class NotchIsland:
         lay = fx.layer()
 
         shape = _notch_path(W, H, RB)
-        mask = CAShapeLayer.layer(); mask.setPath_(shape)
-        lay.setMask_(mask)                               # frosted glass clipped to the notch shape
+        mask = CAShapeLayer.layer(); mask.setPath_(shape); lay.setMask_(mask)
         border = CAShapeLayer.layer()
         border.setPath_(shape); border.setFillColor_(NSColor.clearColor().CGColor())
         border.setStrokeColor_(_white(0.16)); border.setLineWidth_(1.2)
         lay.addSublayer_(border)
         win.setContentView_(fx)
 
-        cy = (H - NOTCH_TOP) / 2.0 + 1                   # vertical center of the BELOW-notch area
-        # spinner
+        cy = (H - NOTCH_TOP) / 2.0 + 1
         d = 16.0
         spin = CAShapeLayer.layer()
         spin.setBounds_(CGRectMake(0, 0, d, d)); spin.setPosition_((26.0, cy))
@@ -134,10 +149,10 @@ class NotchIsland:
         spin.setStrokeColor_(_cg(ACCENT)); spin.setFillColor_(NSColor.clearColor().CGColor())
         spin.setLineWidth_(2.3); spin.setLineCap_("round")
         spin.setStrokeStart_(0.0); spin.setStrokeEnd_(0.72)
-        rot = CABasicAnimation.animationWithKeyPath_("transform.rotation.z")
-        rot.setFromValue_(0.0); rot.setToValue_(-6.2831853); rot.setDuration_(0.85)
-        rot.setRepeatCount_(1e9)
-        spin.addAnimation_forKey_(rot, "spin")
+        if not self._reduce:                                       # faster spinner => feels faster
+            rot = CABasicAnimation.animationWithKeyPath_("transform.rotation.z")
+            rot.setFromValue_(0.0); rot.setToValue_(-6.2831853); rot.setDuration_(0.7)
+            rot.setRepeatCount_(1e9); spin.addAnimation_forKey_(rot, "spin")
         lay.addSublayer_(spin); self._spin = spin
 
         self._title = _text_layer(46, cy - 1, W - 150, 17, 12.5, True)
@@ -152,12 +167,10 @@ class NotchIsland:
         self._fill.setFrame_(CGRectMake(self._px, cy - 1, 3, 4)); self._fill.setCornerRadius_(2)
         self._fill.setBackgroundColor_(_cg(ACCENT)); lay.addSublayer_(self._fill)
         self._cy = cy
+        self._lay = lay
 
-        win.setAlphaValue_(0.0); win.orderFrontRegardless(); self._win = win
-        NSAnimationContext.beginGrouping()
-        NSAnimationContext.currentContext().setDuration_(0.28)
-        win.animator().setAlphaValue_(1.0)
-        NSAnimationContext.endGrouping()
+        win.orderFrontRegardless(); self._win = win
+        self._enter(lay, [spin, self._title, self._sub, track, self._fill])
         self._sync()
 
         NSTimer.scheduledTimerWithTimeInterval_repeats_block_(0.1, True, lambda t: self._sync())
@@ -171,6 +184,51 @@ class NotchIsland:
         threading.Thread(target=_wrap, daemon=True).start()
         app.run()
 
+    # ---------- motion ----------
+    def _enter(self, lay, content):
+        """Spring scale from the TOP (emerges from the notch) + opacity; stagger the content."""
+        eo = _ease_out()
+        if self._reduce:                                           # gentler: just a quick opacity fade
+            win = self._win; win.setAlphaValue_(0.0)
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.currentContext().setDuration_(0.18)
+            win.animator().setAlphaValue_(1.0)
+            NSAnimationContext.endGrouping()
+            return
+        try:
+            lay.setAnchorPoint_((0.5, 1.0)); lay.setPosition_((W / 2.0, H))   # origin = notch (top)
+            sp = CASpringAnimation.animationWithKeyPath_("transform.scale")
+            sp.setMass_(1.0); sp.setStiffness_(300.0); sp.setDamping_(24.0)
+            sp.setFromValue_(0.9); sp.setToValue_(1.0)
+            sp.setDuration_(sp.settlingDuration())
+            lay.addAnimation_forKey_(sp, "in")
+            op = CABasicAnimation.animationWithKeyPath_("opacity")
+            op.setFromValue_(0.0); op.setToValue_(1.0); op.setDuration_(0.26); op.setTimingFunction_(eo)
+            lay.addAnimation_forKey_(op, "fade")
+        except Exception:
+            pass
+        # stagger inner content (decorative cascade)
+        t0 = CACurrentMediaTime()
+        for idx, sub in enumerate(content):
+            a = CABasicAnimation.animationWithKeyPath_("opacity")
+            a.setFromValue_(0.0); a.setToValue_(1.0); a.setDuration_(0.22)
+            a.setBeginTime_(t0 + 0.06 + idx * 0.045); a.setTimingFunction_(eo)
+            a.setFillMode_("backwards")
+            sub.addAnimation_forKey_(a, "stagger")
+
+    def _pop(self):
+        """Subtle spring pop on completion — state-indication feedback."""
+        if self._reduce:
+            return
+        try:
+            s = CASpringAnimation.animationWithKeyPath_("transform.scale")
+            s.setMass_(1.0); s.setStiffness_(420.0); s.setDamping_(12.0)
+            s.setFromValue_(1.05); s.setToValue_(1.0); s.setDuration_(s.settlingDuration())
+            self._lay.addAnimation_forKey_(s, "pop")
+        except Exception:
+            pass
+
+    # ---------- per-tick sync ----------
     def _sync(self):
         st = STATE
         CATransaction.begin(); CATransaction.setDisableActions_(True)
@@ -183,10 +241,13 @@ class NotchIsland:
             self._spin.setStrokeColor_(_cg(GREEN)); self._spin.setStrokeEnd_(1.0)
             self._spin.removeAnimationForKey_("spin"); self._fill.setBackgroundColor_(_cg(GREEN))
         CATransaction.commit()
-        if self._done_at and time.time() - self._done_at > 1.7:
-            NSAnimationContext.beginGrouping()
-            NSAnimationContext.currentContext().setDuration_(0.3)
+        if st["done"] and not self._popped:
+            self._popped = True
+            self._pop()
+        if self._done_at and time.time() - self._done_at > 1.6:
+            NSAnimationContext.beginGrouping()                     # snappy exit (faster than entrance)
+            NSAnimationContext.currentContext().setDuration_(0.2)
             self._win.animator().setAlphaValue_(0.0)
             NSAnimationContext.endGrouping()
             NSTimer.scheduledTimerWithTimeInterval_repeats_block_(
-                0.35, False, lambda t: NSApplication.sharedApplication().terminate_(None))
+                0.24, False, lambda t: NSApplication.sharedApplication().terminate_(None))
