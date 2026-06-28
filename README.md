@@ -6,6 +6,11 @@ Computer-use agents are powerful but amnesiac and slow: every run is disposable,
 
 > AI Engineer World's Fair Hackathon 2026 · Theme: **Continual Learning** · Target: **Best Use of Gemini Computer Use**
 
+> 🎙️ **Talk to it.** A LiveKit voice agent runs these skills by voice and narrates live:
+> `python3 -m app.voice_agent console` then say *"calculate 52 times 68 and save it in Word."*
+> What's new on the `feat/v0.1` branch (voice + optimistic replay + fixes) is summarized in
+> **[docs/feat-v0.1-notes.md](docs/feat-v0.1-notes.md)** — start there.
+
 ## The idea in one loop
 ```
 computer-use run  →  intent log  →  Gemini compiles a macro  →  deterministic replay  →  (drift → self-heal)
