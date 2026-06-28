@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "kind": "hybrid_skill",
+  "name": "real_web_textedit_note",
+  "status": "active",
+  "note": "Read a real public website, then create a local TextEdit note from it.",
+  "params": {
+    "url": "https://www.iana.org/domains/reserved",
+    "title": "IANA-managed Reserved Domains",
+    "heading": "IANA-managed Reserved Domains",
+    "marker": "rote-real-web-e6c20c5d1a",
+    "note_text": "Rote real web skill\nSource: https://www.iana.org/domains/reserved\nTitle: IANA-managed Reserved Domains\nHeading: IANA-managed Reserved Domains\nMarker: rote-real-web-e6c20c5d1a"
+  },
+  "segments": [
+    {
+      "id": "read_real_web_page",
+      "surface": "browser",
+      "skill": {
+        "schema_version": 2,
+        "surface": "browser",
+        "name": "real_web_read_page",
+        "app": "https://www.iana.org/domains/reserved",
+        "os": "any",
+        "version": 1,
+        "parent_version": null,
+        "status": "active",
+        "note": "Open and verify a real public web page without mutating it.",
+        "params": {
+          "url": "https://www.iana.org/domains/reserved",
+          "title": "IANA-managed Reserved Domains",
+          "heading": "IANA-managed Reserved Domains"
+        },
+        "checker": {
+          "type": "condition",
+          "condition": {
+            "all": [
+              {
+                "title_contains": "IANA-managed Reserved Domains"
+              },
+              {
+                "text_contains": "IANA-managed Reserved Domains"
+              }
+            ]
+          }
+        },
+        "stats": {},
+        "steps": [
+          {
+            "id": "open_real_page",
+            "op": "navigate",
+            "url": "{{url}}",
+            "precondition": {},
+            "postcondition": {
+              "all": [
+                {
+                  "title_contains": "IANA-managed Reserved Domains"
+                },
+                {
+                  "text_contains": "IANA-managed Reserved Domains"
+                }
+              ]
+            },
+            "timeout": 15,
+            "retry_limit": 1,
+            "fallback": [],
+            "why": "Open the learned real web page"
+          }
+        ]
+      }
+    },
+    {
+      "id": "write_textedit_note",
+      "surface": "desktop",
+      "skill": {
+        "schema_version": 2,
+        "surface": "desktop",
+        "name": "textedit_real_web_note",
+        "app": "TextEdit",
+        "os": "macos",
+        "version": 1,
+        "parent_version": null,
+        "status": "active",
+        "note": "Write a learned real-web research note into TextEdit.",
+        "params": {
+          "note_text": "Rote real web skill\nSource: https://www.iana.org/domains/reserved\nTitle: IANA-managed Reserved Domains\nHeading: IANA-managed Reserved Domains\nMarker: rote-real-web-e6c20c5d1a",
+          "marker": "rote-real-web-e6c20c5d1a"
+        },
+        "checker": {
+          "type": "condition",
+          "condition": {
+            "all": [
+              {
+                "foreground_app": "TextEdit"
+              },
+              {
+                "textedit_document_contains": "{{marker}}"
+              }
+            ]
+          }
+        },
+        "stats": {},
+        "steps": [
+          {
+            "id": "open_textedit",
+            "op": "open_app",
+            "app": "TextEdit",
+            "launch_wait": 6,
+            "precondition": {},
+            "postcondition": {
+              "foreground_app": "TextEdit"
+            },
+            "timeout": 6,
+            "retry_limit": 1,
+            "fallback": [],
+            "why": "Open TextEdit"
+          },
+          {
+            "id": "new_textedit_document",
+            "op": "hotkey",
+            "keys": [
+              "command",
+              "n"
+            ],
+            "precondition": {
+              "foreground_app": "TextEdit"
+            },
+            "postcondition": {
+              "foreground_app": "TextEdit"
+            },
+            "timeout": 3,
+            "retry_limit": 0,
+            "fallback": [],
+            "why": "Create a blank local note"
+          },
+          {
+            "id": "write_real_web_note",
+            "op": "type",
+            "text": "{{note_text}}",
+            "precondition": {
+              "foreground_app": "TextEdit"
+            },
+            "postcondition": {
+              "textedit_document_contains": "{{marker}}"
+            },
+            "timeout": 8,
+            "retry_limit": 0,
+            "fallback": [],
+            "why": "Write the learned web summary"
+          }
+        ]
+      }
+    }
+  ],
+  "checker": {
+    "type": "condition",
+    "condition": {
+      "textedit_document_contains": "{{marker}}"
+    }
+  },
+  "learned_at": "2026-06-28T07:12:37Z"
+}

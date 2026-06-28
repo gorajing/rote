@@ -66,6 +66,14 @@ class MacOSDesktopBackend:
             'if application "Microsoft Word" is running then tell application "Microsoft Word" '
             'to return count of documents'
         )
+        textedit_docs = self._osa(
+            'if application "TextEdit" is running then tell application "TextEdit" '
+            'to return count of documents'
+        )
+        textedit_text = self._osa(
+            'if application "TextEdit" is running then tell application "TextEdit" '
+            'to if (count of documents) > 0 then return text of front document'
+        )
         running = self._osa('tell application "System Events" to get name of every application process')
         clipboard = self._osa('the clipboard as text')
         return {
@@ -73,6 +81,8 @@ class MacOSDesktopBackend:
             "windows": windows,
             "ui_text": ui_text,
             "word_document_count": int(word_docs) if word_docs.isdigit() else 0,
+            "textedit_document_count": int(textedit_docs) if textedit_docs.isdigit() else 0,
+            "textedit_document_text": textedit_text,
             "running_apps": [item.strip() for item in running.split(",") if item.strip()],
             "clipboard": clipboard,
         }

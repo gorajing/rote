@@ -11,6 +11,11 @@ Computer-use agents are powerful but amnesiac and slow: every run is disposable,
 > What's new on the `feat/v0.1` branch (voice + optimistic replay + fixes) is summarized in
 > **[docs/feat-v0.1-notes.md](docs/feat-v0.1-notes.md)** — start there.
 
+> 🌊 **DigitalOcean partner stunt.** The voice agent also understands *"ship it on
+> DigitalOcean"* / *"run the DigitalOcean demo"*. By default it rehearses the exact `doctl`
+> steps without touching cloud state. To run it live, install `doctl`, set `DO_APP_ID`,
+> optional `DO_APP_URL`, and `ROTE_DO_DEMO_LIVE=1` in `.env`, then say the command.
+
 ## The idea in one loop
 ```
 computer-use run  →  intent log  →  Gemini compiles a macro  →  deterministic replay  →  (drift → self-heal)
@@ -169,6 +174,14 @@ python3 -m app.desktop_cu --probe
 **Browser smoke test (no controlled app needed):**
 ```bash
 python -m app.runner --url https://www.google.com --intent "Search for 'Gemini API'."
+```
+
+**DigitalOcean dry run / live partner demo:**
+```bash
+python -m app.digitalocean_demo --action restart          # dry-run, no cloud mutation
+
+# live mode: requires doctl auth plus DO_APP_ID in .env
+python -m app.digitalocean_demo --action restart --live
 ```
 
 ⚠️ The desktop track moves your real mouse and keyboard. Keep hands off while it runs; slam the mouse into a screen corner to abort (pyautogui failsafe).

@@ -53,7 +53,8 @@ def _skill_catalog() -> dict[str, str]:
 def _keyterms(catalog: dict[str, str]) -> list[str]:
     """Bias the recognizer toward our fixed command vocabulary + skill names (big accuracy win)."""
     terms = ["Rote", "Word", "Microsoft Word", "Calculator", "Desktop", "meeting notes",
-             "calculation", "create", "save", "file", "document", "spreadsheet"]
+             "calculation", "create", "save", "file", "document", "spreadsheet",
+             "DigitalOcean", "deploy", "redeploy", "restart", "dashboard", "partner demo"]
     for key in catalog:
         terms += key.replace("_", " ").split()
     seen, out = set(), []
@@ -137,7 +138,9 @@ class RoteAssistant(Agent):
             "something that matches a skill, you MUST immediately call the run_skill function with its "
             "key — actually invoke the tool, never just say that you will. If the user asks for a "
             "calculation (for example '52 times 68' or 'multiply 7 by 9'), call run_skill with skill "
-            "'calc_to_word' and the 'calculation' argument set to a math expression like '52*68'. Speak "
+            "'calc_to_word' and the 'calculation' argument set to a math expression like '52*68'. "
+            "If the user asks to deploy, redeploy, restart, ship, or impress partners with DigitalOcean, "
+            "call run_digitalocean_demo. Speak "
             "warmly and conversationally, like a friendly assistant giving a live demo, never robotic "
             "and never reading a script. No markdown, no lists, no emojis. If nothing matches, "
             "say you have not learned that task yet and ask if they want you to learn it.\n\n"
@@ -218,6 +221,38 @@ class RoteAssistant(Agent):
         if proc.returncode != 0:
             raise ToolError(f"The {pretty} task didn't complete: {''.join(tail)[-300:]}")
         return random.choice(_DONE)
+
+    @function_tool()
+    async def run_digitalocean_demo(self, context: RunContext, action: str = "restart") -> str:
+        """Run the DigitalOcean partner demo. Use this when the user asks Rote to deploy,
+        redeploy, restart, ship, open DigitalOcean, or impress the DigitalOcean partners.
+
+        Args:
+            action: "restart" for the fastest partner demo, or "deploy" to create a new
+                DigitalOcean App Platform deployment. Live execution requires ROTE_DO_DEMO_LIVE=1
+                and DO_APP_ID in .env; otherwise it rehearses the exact steps without changing cloud
+                state.
+        """
+        context.disallow_interruptions()
+        from .digitalocean_demo import DigitalOceanDemoError, config_from_env, run_demo
+
+        lines: list[str] = []
+
+        def narrate(text: str) -> None:
+            lines.append(text)
+            _say(context.session, text)
+
+        try:
+            config = config_from_env(action=action)
+            result = await asyncio.to_thread(run_demo, config, narrator=narrate)
+        except DigitalOceanDemoError as exc:
+            raise ToolError(str(exc))
+        if result["dry_run"]:
+            return (
+                "DigitalOcean demo path is staged in dry-run mode. Set DO_APP_ID, optional "
+                "DO_APP_URL, and ROTE_DO_DEMO_LIVE=1 to run it for real."
+            )
+        return "DigitalOcean action completed and verified. Dashboard and live app are open."
 
 
 server = AgentServer()
