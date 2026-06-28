@@ -21,7 +21,9 @@ SCHEMA = """You output ONLY a JSON object with this exact shape:
   "app": "<the macOS app driven, e.g. Microsoft Word>",
   "os": "macos",
   "note": "<one line on what this macro does>",
-  "params": { "<param>": "<value used>", ... },
+  "variables": {
+    "<param_name>": { "type": "string|number|integer|boolean", "required": true|false }
+  },
   "steps": [ { "op": "...", ...fields..., "why": "<short reason>" }, ... ]
 }
 
@@ -44,7 +46,10 @@ NO screenshots and NO model calls. Rules:
 - Replace visual clicks with keyboard shortcuts wherever one exists: Command+N (new document),
   Command+S (save), Command+B (bold), Command+D (Desktop in the save dialog), Return (confirm).
 - DROP redundant or failed fumbles in the recording (e.g. duplicate clicks, retries that did nothing).
-- Keep the literal text the user asked to type, and the filename used.
+- Extract user-controlled values into variables and reference them as {{text}}, {{filename}},
+  or another descriptive name. For each extracted variable, populate the top-level "variables"
+  object with its name as key, a "type" (string / number / integer / boolean), and
+  "required": true if the task cannot proceed without it, false if it is optional.
 - APP GUARDRAIL: never assume an app is open. Before interacting with ANY app — and again every
   time you switch back to an app you used earlier — emit {"op":"open_app","app":"<Name>","launch_wait":6}.
   That op self-checks (already-open -> instant focus; closed -> launch + wait), so:

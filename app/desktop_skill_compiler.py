@@ -27,7 +27,9 @@ SCHEMA = """You output ONLY a JSON object with this exact shape:
   "parent_version": null,
   "status": "active",
   "note": "<one line on what this macro does>",
-  "params": { "<param>": "<value used>", ... },
+  "variables": {
+    "<param_name>": { "type": "string|number|integer|boolean", "required": true|false }
+  },
   "checker": {
     "type": "word_docx",
     "location": "{{location}}",
@@ -70,8 +72,11 @@ NO screenshots and NO model calls. Rules:
 - Replace visual clicks with keyboard shortcuts wherever one exists: Command+N (new document),
   Command+S (save), Command+B (bold), Command+D (Desktop in the save dialog), Return (confirm).
 - DROP redundant or failed fumbles in the recording.
-- Extract user-controlled values into params and reference them as {{text}}, {{filename}},
-  {{location}}, or another descriptive parameter. Never repeat those literals in steps.
+- Extract user-controlled values into variables and reference them as {{text}}, {{filename}},
+  {{location}}, or another descriptive name. Never repeat those literals in steps.
+  For each extracted variable, populate the top-level "variables" object with its name as key,
+  a "type" (string / number / integer / boolean), and "required": true if the task cannot
+  proceed without it, false if it is optional.
 - Give every step a stable semantic id that will remain meaningful when nearby steps change.
 - Add deterministic preconditions and postconditions where macOS can inspect them. Supported
   conditions are foreground_app, app_window, word_document, ui_text, dialog, and file_exists.
