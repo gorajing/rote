@@ -159,8 +159,12 @@ class RoteAssistant(Agent):
             "1. ALWAYS call database_get first, passing a short description of what the user wants. "
             "It searches the skill database.\n"
             "2. If database_get returns a skill name, immediately call run_skill with that exact "
-            "name to replay it (instant, free). For a calculation (e.g. '52 times 68'), use the "
-            "matched skill and set the 'calculation' argument to a math expression like '52*68'.\n"
+            "name to replay it (instant, free). CRITICAL: pass the user's specific values in "
+            "run_skill's 'params' as a JSON object, using the parameter names database_get lists "
+            "(for example params={\"text\":\"Welcome to the fair\",\"filename\":\"fair\"} for a "
+            "document, or {\"song\":\"Levitating\"} to play a song). Only omit a parameter to keep "
+            "its default. For a calculation (e.g. '52 times 68'), set the 'calculation' argument to "
+            "a math expression like '52*68' instead of putting it in params.\n"
             "3. If database_get finds nothing, immediately call computer_use with the user's full "
             "request as the 'intent'. That figures the task out live AND learns it, so next time it "
             "is instant. Never tell the user you cannot do a task — learn it with computer_use.\n"
@@ -199,15 +203,22 @@ class RoteAssistant(Agent):
         print(f"[ROTE] database_get: MATCH '{name}' from MongoDB — {len(macro.get('steps', []))} steps, "
               f"call-ops={calls} ({'LOCAL DEPENDENCY!' if calls else 'self-contained'})", flush=True)
         _FOUND[name] = macro                          # cache so run_skill needs no second DB round-trip
-        return f"Found a learned skill named '{name}'. Call run_skill with skill='{name}' now."
+        param_names = [p for p in macro.get("params", {}) if p != "expected_result"]
+        hint = (f" Its parameters are: {', '.join(param_names)} — fill the ones the user specified in "
+                f"run_skill's params (JSON)." if param_names else "")
+        return f"Found a learned skill named '{name}'. Call run_skill with skill='{name}'.{hint}"
 
     @function_tool()
-    async def run_skill(self, context: RunContext, skill: str, calculation: str = "") -> str:
+    async def run_skill(self, context: RunContext, skill: str, params: str = "", calculation: str = "") -> str:
         """Replay a skill found via database_get on the user's Mac right now. Only call this after
         database_get returned a skill name.
 
         Args:
             skill: The exact skill name database_get returned.
+            params: A JSON object of the user's specific values for THIS skill's parameters, using the
+                names database_get listed. Example: '{"text": "Welcome to the fair", "filename":
+                "fair"}' for a document, or '{"song": "Levitating"}' to play a song. Omit a parameter
+                to keep its recorded default. Leave empty if the user specified nothing.
             calculation: Only for the calculation skill — the arithmetic the user asked for, as a
                 plain math expression using + - * / (for example "52*68" for "52 times 68"). Leave
                 empty for other skills or when no calculation was requested.
@@ -234,12 +245,24 @@ class RoteAssistant(Agent):
         # --headless: the replay emits @@EV but does NOT open its own notch; this agent owns the one
         # persistent notch and renders the step stream onto it (see the @@EV loop below).
         cmd = ["python3", "-u", "-m", "app.desktop_hud", "--replay", replay_path, "--events", "--headless"]
-        if calculation.strip():                       # dynamic calculation -> override macro params
+        # the user's specific values override the skill's recorded defaults (text, filename, song, …)
+        overrides: dict = {}
+        if params.strip():
+            try:
+                parsed = json.loads(params)
+                if isinstance(parsed, dict):
+                    overrides.update({k: v for k, v in parsed.items() if v is not None})
+            except Exception:
+                print(f"[ROTE] run_skill: could not parse params {params!r}; using defaults", flush=True)
+        if calculation.strip():                       # calc convenience: auto-compute expected_result
             expected = _eval_calc(calculation)
             if expected is None:
                 raise ToolError("I couldn't work out that calculation. Try, say, fifty-two times sixty-eight.")
-            cmd += ["--params", json.dumps({"calculation": calculation.replace(" ", ""),
-                                            "expected_result": expected})]
+            overrides["calculation"] = calculation.replace(" ", "")
+            overrides["expected_result"] = expected
+        if overrides:
+            print(f"[ROTE] run_skill '{skill}': params -> {overrides}", flush=True)
+            cmd += ["--params", json.dumps(overrides, default=str)]
 
         _say(context.session, random.choice(_INTROS))
         _BUSY["skill"] = True                         # working ring owns the notch until we finish
