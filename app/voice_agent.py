@@ -14,9 +14,11 @@ Run (dev mode, connects to your LiveKit Cloud project and the Agent Console):
 import asyncio
 import atexit
 import json
+import logging
 import os
 import random
 import re
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -34,6 +36,10 @@ from .desktop_skill_compiler import compile_macro
 
 REPO = Path(__file__).resolve().parent.parent
 load_dotenv(REPO / ".env")                       # LIVEKIT_* + GEMINI/GOOGLE keys
+
+os.environ.setdefault("LIVEKIT_LOG_LEVEL", "info")
+for _name in ("pymongo", "pymongo.topology", "pymongo.connection", "urllib3"):
+    logging.getLogger(_name).setLevel(logging.WARNING)
 
 # Skills live ONLY in MongoDB (the `tasks` collection) — no local files at runtime. database_get
 # searches it, computer_use learns + pushes to it. _FOUND caches the macro from the last successful
@@ -244,7 +250,7 @@ class RoteAssistant(Agent):
         replay_path = tmp.name
         # --headless: the replay emits @@EV but does NOT open its own notch; this agent owns the one
         # persistent notch and renders the step stream onto it (see the @@EV loop below).
-        cmd = ["python3", "-u", "-m", "app.desktop_hud", "--replay", replay_path, "--events", "--headless"]
+        cmd = [sys.executable, "-u", "-m", "app.desktop_hud", "--replay", replay_path, "--events", "--headless"]
         # the user's specific values override the skill's recorded defaults (text, filename, song, …)
         overrides: dict = {}
         if params.strip():
@@ -348,7 +354,7 @@ class RoteAssistant(Agent):
         NOTCH.send("thinking", title="Learning this…", subtitle=intent[:44])
         _say(context.session, "I haven't done this one before. Let me work it out live, watch.")
         trace = tempfile.NamedTemporaryFile("w", suffix=".trace.json", delete=False); trace.close()
-        cmd = ["python3", "-u", "-m", "app.desktop_cu", "--intent", intent, "--trace", trace.name]
+        cmd = [sys.executable, "-u", "-m", "app.desktop_cu", "--intent", intent, "--trace", trace.name]
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd, cwd=str(REPO),
