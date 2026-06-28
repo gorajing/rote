@@ -21,6 +21,7 @@ SCHEMA = """You output ONLY a JSON object with this exact shape:
   "app": "<the macOS app driven, e.g. Microsoft Word>",
   "os": "macos",
   "note": "<one line on what this macro does>",
+  "params": { "<param_name>": "<default value used in this recording>", ... },
   "variables": {
     "<param_name>": { "type": "string|number|integer|boolean", "required": true|false }
   },
@@ -49,7 +50,10 @@ NO screenshots and NO model calls. Rules:
 - Extract user-controlled values into variables and reference them as {{text}}, {{filename}},
   or another descriptive name. For each extracted variable, populate the top-level "variables"
   object with its name as key, a "type" (string / number / integer / boolean), and
-  "required": true if the task cannot proceed without it, false if it is optional.
+  "required": true if the task cannot proceed without it, false if it is optional. ALSO populate
+  the top-level "params" object mapping each variable name to the actual literal value used in
+  this recording. "params" gives the replay engine default values for {{placeholders}};
+  "variables" describes their types. Emit BOTH for every variable.
 - APP GUARDRAIL: never assume an app is open. Before interacting with ANY app — and again every
   time you switch back to an app you used earlier — emit {"op":"open_app","app":"<Name>","launch_wait":6}.
   That op self-checks (already-open -> instant focus; closed -> launch + wait), so:

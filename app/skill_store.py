@@ -61,26 +61,27 @@ def flatten_macro(macro: dict, registry=None) -> dict:
     return {**{k: v for k, v in macro.items() if k != "steps"}, "steps": inline(macro["steps"], None, "")}
 
 
+# Bookkeeping/metadata fields that live on a `tasks` document but are not part of the macro itself.
+_NON_MACRO_KEYS = {"_id", "score", "embedding", "doc_type", "description",
+                   "verified", "created_at", "site", "platform"}
+
+
 def _doc_to_macro(doc: dict) -> dict | None:
     """Coerce a `tasks` document into a replayable macro, or None if it isn't one.
 
-    Skills we push carry the full macro under `macro`. Documents written by other tooling may keep
-    macro-format steps at the top level; we wrap those into a minimal macro. Anything else (e.g. a
-    raw browser trace in a different step format) returns None so the agent learns it fresh."""
-    macro = doc.get("macro")
-    if isinstance(macro, dict) and isinstance(macro.get("steps"), list):
-        return macro
+    The unified schema stores the macro AT THE TOP LEVEL (steps, params, checker, surface, ...), so a
+    skill document IS a macro plus a few bookkeeping fields. We strip the bookkeeping and return the
+    rest. Foreign documents (e.g. execution traces whose steps aren't macro ops) return None so the
+    agent learns the task fresh instead of trying to replay something unrunnable."""
     steps = doc.get("steps")
-    if isinstance(steps, list) and steps and all(isinstance(s, dict) and "op" in s for s in steps):
-        return {
-            "schema_version": 2,
-            "name": doc.get("name") or doc.get("intent_hash") or "task",
-            "surface": doc.get("surface", "desktop"),
-            "params": doc.get("variables") if isinstance(doc.get("variables"), dict) else {},
-            "checker": doc.get("checker", {}),
-            "steps": steps,
-        }
-    return None
+    if not (isinstance(steps, list) and steps and all(isinstance(s, dict) and "op" in s for s in steps)):
+        return None
+    macro = {k: v for k, v in doc.items() if k not in _NON_MACRO_KEYS}
+    macro.setdefault("schema_version", 2)
+    macro.setdefault("name", doc.get("name") or "task")
+    macro.setdefault("surface", doc.get("surface", "desktop"))
+    macro.setdefault("params", {})
+    return macro
 
 
 def search(text: str, threshold: float | None = None) -> dict | None:
@@ -103,17 +104,16 @@ def save_skill(macro: dict, description: str, name: str | None = None) -> str:
     """Push a learned skill to the `tasks` collection. This is the `push_database` operation.
 
     Stores a self-contained, replayable document whose `description` is vector-indexed for search.
-    The macro is flattened first so it has NO `call` steps -> replay needs no local files."""
+    The macro is flattened first so it has NO `call` steps -> replay needs no local files. Stored in
+    the unified top-level schema: the macro's own fields (steps, params, checker, variables, surface,
+    ...) sit at the document root, alongside `description` (vector-indexed) and `doc_type`."""
     macro = flatten_macro(macro)
     name = name or macro.get("name") or "task"
     doc = {
-        "doc_type": "skill",
+        **{k: v for k, v in macro.items() if k not in _NON_MACRO_KEYS},
         "name": name,
         "description": description,
-        "surface": macro.get("surface", "desktop"),
-        "macro": macro,                               # the replayable skill (read back by search())
-        "steps": macro.get("steps", []),              # mirror at top level for schema consistency
-        "variables": macro.get("params", {}),
+        "doc_type": "skill",
         "verified": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }

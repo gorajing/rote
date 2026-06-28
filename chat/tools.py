@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 import database.api as db_api
+from app import skill_store
 from app.desktop_cu import run as cu_run
 from app.desktop_skill_compiler import compile_macro
 from app.verified_replay import replay_verified
@@ -25,21 +26,22 @@ from app.verified_replay import replay_verified
 def search_db(description: str) -> list[dict]:
     """Vector-search MongoDB and return the top matching skills.
 
-    Returns each result with only the fields the agent needs to decide and act:
-    name, description, steps, params (input variables), score, and _id.
-    """
+    Each result is a fully replayable macro (steps + params + checker) plus display metadata
+    (name, description, score, variables), so the agent can decide AND pass it straight to
+    execute_skill. Skills are stored in the unified top-level schema (see app/skill_store)."""
     raw = db_api.retrieve(description, top_k=3)
     results = []
     for r in raw:
+        macro = skill_store._doc_to_macro(r) or {}    # steps/params/checker/surface -> replayable
         results.append({
             "_id":         str(r.get("_id", "")),
             "name":        r.get("name", "unknown"),
             "description": r.get("description", r.get("note", "")),
-            "site":        r.get("site", ""),        # exact application / website (e.g. "amazon", "excel")
-            "platform":    r.get("platform", ""),    # broad category (e.g. "web", "adobe", "whatsapp")
-            "steps":     r.get("steps", []),
-            "variables": r.get("variables", {}),
-            "score":     round(float(r.get("score", 0.0)), 4),
+            "site":        r.get("site", ""),         # exact application / website (e.g. "amazon", "excel")
+            "platform":    r.get("platform", ""),     # broad category (e.g. "web", "adobe", "whatsapp")
+            "variables":   r.get("variables", {}),
+            "score":       round(float(r.get("score", 0.0)), 4),
+            **macro,
         })
     return results
 
@@ -91,8 +93,9 @@ def computer_use(intent: str) -> dict:
 def put_db(skill: dict) -> str:
     """Persist a compiled skill to MongoDB so future search_db calls can find it.
 
+    Routes through the shared store, which flattens any `call` subskills into a self-contained macro
+    and writes the unified top-level schema (so the saved skill replays with zero local files).
     Returns the inserted document ID as a string.
     """
-    if "description" not in skill:
-        skill = {**skill, "description": skill.get("note", skill.get("name", ""))}
-    return db_api.push(skill)
+    description = skill.get("description") or skill.get("note") or skill.get("name", "")
+    return skill_store.save_skill(skill, description, skill.get("name"))

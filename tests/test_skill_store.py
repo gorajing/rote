@@ -10,9 +10,10 @@ from app import skill_store
 
 
 def _skill_doc(name, desc, score):
-    macro = {"schema_version": 2, "name": name, "surface": "desktop",
-             "checker": {"type": "word_docx"}, "params": {}, "steps": [{"id": "s1", "op": "type", "text": "hi"}]}
-    return {"name": name, "description": desc, "surface": "desktop", "macro": macro, "score": score}
+    # unified schema: the macro lives at the document TOP LEVEL, not nested under a `macro` key
+    return {"schema_version": 2, "name": name, "description": desc, "surface": "desktop",
+            "doc_type": "skill", "checker": {"type": "word_docx"}, "params": {},
+            "steps": [{"id": "s1", "op": "type", "text": "hi"}], "score": score}
 
 
 class DocToMacroTests(unittest.TestCase):
@@ -104,9 +105,11 @@ class SaveSkillTests(unittest.TestCase):
         self.assertEqual(skill_id, "id1")
         self.assertEqual(captured["doc_type"], "skill")
         self.assertEqual(captured["description"], "calculate two numbers")
-        self.assertEqual(captured["macro"]["name"], "calc")
-        self.assertEqual(captured["variables"], {"x": "1"})
+        self.assertEqual(captured["name"], "calc")           # top-level macro fields
+        self.assertEqual(captured["params"], {"x": "1"})
+        self.assertIn("steps", captured)
         self.assertIn("created_at", captured)
+        self.assertNotIn("macro", captured)                  # unified: no nested macro field
 
 
 if __name__ == "__main__":
