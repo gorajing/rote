@@ -9,7 +9,7 @@
   "status": "active",
   "note": "Calculate a value, transfer it through the clipboard, and verify the saved Word document.",
   "description": "Performs a calculation in Calculator, copies the result, pastes it into a new Word document, and saves the document on the Desktop.",
-  "params": {"calculation": "1234+5678", "expected_result": "6912", "filename": "calc_result", "location": "Desktop"},
+  "params": {"calculation": "1234+5678", "expected_result": "6,912", "filename": "calc_result", "location": "Desktop"},
   "checker": {"type": "word_docx", "location": "{{location}}", "filename": "{{filename}}.docx", "contains": ["Calculation result:", "{{expected_result}}"]},
   "stats": {"uses": 0, "successes": 0, "failures": 0, "success_rate": 0.0, "avg_duration": 0.0, "model_calls": 0},
   "steps": [

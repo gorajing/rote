@@ -84,6 +84,22 @@ def _location_path(location: str) -> Path:
     return Path(os.path.expanduser(location))
 
 
+def _ensure_unique_filename(params: dict) -> dict:
+    """Never overwrite: if <filename>.docx already exists at <location>, bump to <filename>_2,
+    _3, ... (macOS-style) so the new run keeps the user's previous files. Computed ONCE up front
+    so the save step, the verify step, and the final checker all use the same unique name."""
+    fname = params.get("filename")
+    if not fname:
+        return params
+    location = _location_path(params.get("location", "Desktop"))
+    if not (location / f"{fname}.docx").exists():
+        return params
+    i = 2
+    while (location / f"{fname}_{i}.docx").exists():
+        i += 1
+    return {**params, "filename": f"{fname}_{i}"}
+
+
 def docx_contains(path: Path, expected: str) -> bool:
     return _docx_contains(path, expected)
 
@@ -123,11 +139,18 @@ def replay_verified(
     registry: LocalSkillRegistry | None = None,
     repair_service=None,
     on_event: Callable[[str, dict], None] | None = None,
+    optimistic: bool = True,
 ) -> dict:
-    """Replay and verify a macro. Repair is delegated once when explicitly enabled."""
+    """Replay and verify a macro. Repair is delegated once when explicitly enabled.
+
+    optimistic=True (default): a learned skill replays blind and fast — execute every step with
+    dynamic waits and NO per-step desktop inspection, then verify ONCE with the final checker.
+    The slow per-step verification runs only to DIAGNOSE a real failure (and only when repair is
+    requested). A healthy skill therefore replays at full speed."""
     started = time.time()
     skill = migrate_macro(skill)
     params = {**skill.get("params", {}), **(params or {})}
+    params = _ensure_unique_filename(params)             # keep old files; save as name_2, name_3, ...
     backend = backend or MacOSDesktopBackend()
     registry = registry or LocalSkillRegistry()
     records = []
@@ -135,6 +158,28 @@ def replay_verified(
     retries = fallbacks = 0
     steps = _expand_steps(skill, params, registry)
 
+    # ---- OPTIMISTIC FAST PATH: run blind with dynamic waits, verify once at the end ----
+    if optimistic:
+        for index, step in enumerate(steps, 1):
+            if on_event:
+                on_event("step", {"index": index, "total": len(steps), "step": step})
+            backend.execute(step)                          # dynamic waits inside; no inspection
+        # file/HTTP checkers don't need desktop state -> skip the expensive final inspect() scan
+        passed, failures = check_final(skill.get("checker"), params)
+        if passed or not (allow_repair and repair_service is not None):
+            return {
+                "success": passed, "checker_passed": passed,
+                "checker_failures": [] if passed else failures,
+                "failed_step_id": None, "failure": None, "records": [],
+                "steps": len(steps), "elapsed_s": round(time.time() - started, 2),
+                "retries": 0, "fallbacks": 0, "model_calls": 0, "repair_calls": 0,
+                "skill_name": skill["name"], "skill_version": skill.get("version", 1),
+                "used_skill": True, "mode": "optimistic",
+            }
+        if on_event:                                       # failed + repair requested -> diagnose below
+            on_event("diagnosing", {"checker_failures": failures})
+
+    # ---- VERIFIED DIAGNOSTIC PATH (per-step pre/postconditions to localize + repair) ----
     for index, step in enumerate(steps, 1):
         if on_event:
             on_event("step", {"index": index, "total": len(steps), "step": step})

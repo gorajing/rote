@@ -21,7 +21,12 @@ def main():
     source.add_argument("--skill", help="registered macro name, e.g. create_word_file")
     source.add_argument("--replay", help="legacy path to a macro JSON file")
     ap.add_argument("--repair", action="store_true", help="repair one failed transition and validate it")
+    ap.add_argument("--events", action="store_true",
+                    help="emit @@EV <json> lines on stdout for an external narrator (e.g. the voice agent)")
+    ap.add_argument("--params", default=None,
+                    help="JSON object of param overrides, e.g. a dynamic calculation")
     a = ap.parse_args()
+    overrides = json.loads(a.params) if a.params else None
 
     if not probe():
         raise SystemExit("Fix Screen Recording / Accessibility permissions first.")
@@ -36,6 +41,14 @@ def main():
 
     def work():
         def event(kind, payload):
+            if a.events:                                   # structured stream for the voice narrator
+                rec = {"kind": kind}
+                if kind == "step":
+                    st = payload["step"]
+                    rec.update(index=payload["index"], total=payload["total"],
+                               op=st.get("op"), app=st.get("app"), keys=st.get("keys"),
+                               skill=st.get("skill"), why=st.get("why", st.get("op")))
+                print("@@EV " + json.dumps(rec, default=str), flush=True)
             if kind == "step":
                 step = payload["step"]
                 hud.step(payload["index"], payload["total"], step.get("why", step["op"]))
@@ -49,7 +62,7 @@ def main():
                 hud.status("Candidate rejected")
 
         result = replay_verified(
-            macro, allow_repair=a.repair, registry=registry,
+            macro, params=overrides, allow_repair=a.repair, registry=registry,
             repair_service=RepairService(registry) if a.repair else None,
             on_event=event,
         )
