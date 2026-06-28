@@ -5,6 +5,7 @@ playwright>=1.49
 flask>=3.0
 requests>=2.31
 pymongo>=4.8
+fastmcp>=3.0,<4
 
 # desktop track (macOS) — drive the real desktop + the notch HUD
 pyautogui>=0.9.54

@@ -146,6 +146,33 @@ python3 -m app.voice_agent console     # then say: "calculate 52 times 68 and sa
 | `app/local_skill_registry.py` · `app/skill_repair.py` | versioned promotion + localized repair |
 | `app/notch.py` · `app/desktop_hud.py` · `app/voice_agent.py` | notch HUD · HUD runner · voice agent |
 | `database/api.py` + `data/` | **optional** vector store (Atlas) for cross-agent skill sharing — *seed/mock data; recall is local-first and does not depend on it* |
+| File | Status | Responsibility |
+|---|---|---|
+| `app/schemas.py` | ✅ | frozen contracts: `Task`, `Step`, `Trajectory`, `Skill` |
+| `app/config.py` | ✅ | models, viewport, flags; auto-loads `.env` |
+| **Desktop track (works today)** | | |
+| `app/desktop_cu.py` | ✅ | desktop doer (Gemini CU + pyautogui), `replay()`, dynamic waits (`ensure_app`/`settle`) |
+| `app/desktop_skill_compiler.py` | ✅ | **the desktop compiler** — Gemini reads an intent log → writes a macro |
+| `app/verified_replay.py` | ✅ | step pre/postconditions, parameter binding, subskill expansion, deterministic checker |
+| `app/verification.py` | ✅ | shared desktop/browser condition DSL and file/HTTP/state checkers |
+| `app/browser_backend.py` | ✅ | semantic Playwright execution backend for the shared replay engine |
+| `app/local_skill_registry.py` | ✅ | local candidate/version history and success-gated promotion |
+| `app/skill_repair.py` | ✅ | localized Gemini patch generation and clean end-to-end validation |
+| `app/notch.py` | ✅ | Dynamic-Island notch HUD (AppKit / PyObjC) |
+| `app/desktop_hud.py` | ✅ | run a replay with the notch HUD |
+| `app/desktop_speed.py` | ✅ | cold-CU vs compiled-replay speed proof (+ self-heal fallback) |
+| `app/desktop_eval.py` | ✅ | skills-off ablation (cold vs skill-injected) |
+| `app/hud.py` | ⚠️ | early Tkinter HUD — superseded by `notch.py` (Tk can't render at the notch) |
+| `database/skills/*.macro.json` | ✅ | Gemini-authored, replayable skills |
+| `database/api.py` + `data/` | ✅ | local Skill lookup plus MongoDB Atlas semantic vector search |
+| **Browser track (original concept)** | | |
+| `app/cu_runner.py` | ✅ | Gemini CU loop on a Playwright browser → `Trajectory` |
+| `app/executor.py` | ✅ | Playwright action executor (full 3.5 browser action space) |
+| `app/runner.py` | ✅ | browser entry point / smoke test |
+| `app/trace.py` | ✅ | trajectory recorder |
+| **Not built yet** | | |
+| Atlas registry sync, desktop eval fleet | ⛔ todo | Atlas search descriptors are supported; remote executable registry remains |
+| `app/mcp_server.py` | ✅ | FastMCP stdio server for desktop skill search, inspection, and verified replay |
 
 ---
 
@@ -168,6 +195,36 @@ cp .env.example .env                              # add GEMINI_API_KEY=...  (.en
 python3 -m app.desktop_cu --probe                 # verify permissions
 python -m app.runner --url https://www.google.com --intent "Search for 'Gemini API'."   # browser smoke test
 ```
+
+### FastMCP server
+
+The MCP server uses MongoDB Atlas for semantic discovery and the local versioned registry as the
+source of executable macros. Index active desktop skills explicitly, then configure an MCP client
+to launch the stdio server:
+
+```bash
+python -m app.skill_search_index --dry-run   # inspect descriptors without writing Atlas
+python -m app.skill_search_index             # embed and upsert descriptors in Atlas
+python -m app.mcp_server                     # stdio server (normally launched by the MCP client)
+```
+
+Example client configuration (use absolute paths on your machine):
+
+```json
+{
+  "mcpServers": {
+    "rote": {
+      "command": "/absolute/path/to/rote/.venv/bin/python",
+      "args": ["-m", "app.mcp_server"],
+      "cwd": "/absolute/path/to/rote"
+    }
+  }
+}
+```
+
+The Atlas Vector Search index `description` must index `embedding` as the vector field and
+`doc_type`, `surface`, `status`, `checker_verified`, and `app` as filter fields. Desktop replay
+controls the real keyboard and mouse and therefore requires `confirm_execution=true` on every call.
 
 ⚠️ The desktop track moves your real mouse and keyboard. Keep hands off while it runs; slam the mouse into a screen corner to abort (pyautogui failsafe).
 

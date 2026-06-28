@@ -57,6 +57,41 @@ class LocalSkillRegistry:
             raise FileNotFoundError(f"skill not found: {name}")
         return migrate_macro(json.loads(legacy.read_text(encoding="utf-8")))
 
+    def list_skills(self, *, surface: str | None = None, status: str = "active") -> list[dict]:
+        """Return one summary for every locally available selected skill."""
+        index = self._index().get("skills", {})
+        names = set(index)
+        for path in self.root.glob("*.macro.json"):
+            try:
+                name = json.loads(path.read_text(encoding="utf-8")).get("name")
+                if name:
+                    names.add(name)
+            except (OSError, json.JSONDecodeError):
+                continue
+
+        result = []
+        for name in sorted(names):
+            try:
+                skill = self.load_skill(name)
+            except (FileNotFoundError, ValueError, json.JSONDecodeError):
+                continue
+            if surface is not None and skill.get("surface", "desktop") != surface:
+                continue
+            if status and skill.get("status", "active") != status:
+                continue
+            result.append({
+                "name": skill["name"],
+                "version": int(skill.get("version", 1)),
+                "surface": skill.get("surface", "desktop"),
+                "app": skill.get("app"),
+                "status": skill.get("status", "active"),
+                "note": skill.get("note", ""),
+                "params": list(skill.get("params", {}).keys()),
+                "checker": skill.get("checker", {}),
+                "stats": skill.get("stats", {}),
+            })
+        return result
+
     def create_candidate(self, skill: dict, reason: str = "repair") -> dict:
         candidate = copy.deepcopy(skill)
         parent = int(skill.get("version", 1))
