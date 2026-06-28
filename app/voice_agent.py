@@ -74,6 +74,24 @@ def _say(session, text: str) -> None:
         asyncio.ensure_future(r)
 
 
+def _eval_calc(expr: str) -> str | None:
+    """Safely evaluate arithmetic and format like macOS Calculator (e.g. 52*68 -> '3,536').
+    Only digits and + - * / ( ) are allowed; returns None if it can't be parsed."""
+    expr = (expr or "").replace(" ", "")
+    if not expr or not re.fullmatch(r"[0-9+\-*/().]+", expr):
+        return None
+    try:
+        val = eval(expr, {"__builtins__": {}}, {})       # sandboxed: no builtins, validated chars
+    except Exception:
+        return None
+    if isinstance(val, float):
+        if val.is_integer():
+            val = int(val)
+        else:
+            return str(val)                              # best-effort for non-integer results
+    return f"{val:,}"                                     # thousands comma, matching Calculator
+
+
 # Conversational, presenter-style narration — varied so it never sounds canned.
 _INTROS = ["Sure thing — watch how fast this is.", "Happy to. Here we go.",
            "On it. Let me walk you through it.", "You got it. Check this out."]
@@ -117,7 +135,9 @@ class RoteAssistant(Agent):
             "You are Rote, a fast voice assistant that performs tasks directly on the user's Mac by "
             "replaying skills it already learned, instantly and for free. When the user asks you to do "
             "something that matches a skill, you MUST immediately call the run_skill function with its "
-            "key — actually invoke the tool, never just say that you will. Speak "
+            "key — actually invoke the tool, never just say that you will. If the user asks for a "
+            "calculation (for example '52 times 68' or 'multiply 7 by 9'), call run_skill with skill "
+            "'calc_to_word' and the 'calculation' argument set to a math expression like '52*68'. Speak "
             "warmly and conversationally, like a friendly assistant giving a live demo, never robotic "
             "and never reading a script. No markdown, no lists, no emojis. If nothing matches, "
             "say you have not learned that task yet and ask if they want you to learn it.\n\n"
@@ -125,12 +145,15 @@ class RoteAssistant(Agent):
         ))
 
     @function_tool()
-    async def run_skill(self, context: RunContext, skill: str) -> str:
+    async def run_skill(self, context: RunContext, skill: str, calculation: str = "") -> str:
         """Replay a learned desktop skill on the user's Mac right now. Use this whenever the user
         asks you to perform a task that matches one of your known skills.
 
         Args:
             skill: The key of the skill to run, exactly one of the known skill keys.
+            calculation: Only for the 'calc_to_word' skill — the arithmetic the user asked for, as a
+                plain math expression using + - * / (for example "52*68" for "52 times 68"). Leave
+                empty for other skills or when no calculation was requested.
         """
         skill = skill.strip().replace(" ", "_").lower()
         path = SKILLS_DIR / f"{skill}.macro.json"
@@ -141,12 +164,19 @@ class RoteAssistant(Agent):
         context.disallow_interruptions()             # desktop action — don't cut it off mid-run
         pretty = skill.replace("_", " ")
 
+        cmd = ["python3", "-u", "-m", "app.desktop_hud", "--replay", str(path), "--events"]
+        if calculation.strip():                       # dynamic calculation -> override macro params
+            expected = _eval_calc(calculation)
+            if expected is None:
+                raise ToolError("I couldn't work out that calculation. Try, say, fifty-two times sixty-eight.")
+            cmd += ["--params", json.dumps({"calculation": calculation.replace(" ", ""),
+                                            "expected_result": expected})]
+
         _say(context.session, random.choice(_INTROS))
         # run main's verified replay in a subprocess (owns the notch HUD's AppKit main thread),
         # asking it to stream engine events (@@EV json) which we narrate live. -u = unbuffered.
         proc = await asyncio.create_subprocess_exec(
-            "python3", "-u", "-m", "app.desktop_hud", "--replay", str(path), "--events",
-            cwd=str(REPO),
+            *cmd, cwd=str(REPO),
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
         )
         tail = []

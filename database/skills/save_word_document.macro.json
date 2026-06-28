@@ -11,12 +11,13 @@
   "checker": {},
   "stats": {"uses": 0, "successes": 0, "failures": 0, "success_rate": 0.0, "avg_duration": 0.0, "model_calls": 0},
   "steps": [
+    {"id": "delete_existing", "op": "delete_file", "filename": "{{filename}}", "location": "{{location}}", "precondition": {}, "postcondition": {}, "timeout": 1, "retry_limit": 0, "fallback": [], "why": "Remove any existing file with this name so the save never hits a 'replace?' dialog"},
     {"id": "open_save_dialog", "op": "hotkey", "keys": ["command", "s"], "precondition": {"foreground_app": "Microsoft Word", "word_document": true}, "postcondition": {}, "timeout": 5, "retry_limit": 0, "fallback": [], "why": "Open the Save dialog"},
     {"id": "wait_for_save_dialog", "op": "wait", "seconds": 2, "precondition": {}, "postcondition": {}, "timeout": 2, "retry_limit": 0, "fallback": [], "why": "Wait for the Save dialog"},
-    {"id": "clear_filename", "op": "hotkey", "keys": ["command", "a"], "precondition": {}, "postcondition": {}, "timeout": 2, "retry_limit": 0, "fallback": [], "why": "Select the pre-filled name so the typed filename replaces it (Word auto-fills from the document's first line, which can contain an illegal ':')"},
+    {"id": "clear_filename", "op": "hotkey", "keys": ["command", "a"], "precondition": {}, "postcondition": {}, "timeout": 2, "retry_limit": 0, "fallback": [], "why": "Select the pre-filled name so the typed filename replaces it"},
     {"id": "enter_filename", "op": "type", "text": "{{filename}}", "precondition": {}, "postcondition": {}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Enter the requested filename"},
     {"id": "select_desktop", "op": "hotkey", "keys": ["command", "d"], "precondition": {}, "postcondition": {}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Select the Desktop save location"},
-    {"id": "confirm_save", "op": "key", "key": "return", "precondition": {}, "postcondition": {}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Confirm the save operation"},
-    {"id": "verify_saved_file", "op": "wait", "seconds": 3, "precondition": {}, "postcondition": {"file_exists": "{{filename}}.docx", "location": "{{location}}"}, "timeout": 3, "retry_limit": 1, "fallback": [], "why": "Verify that the document was written"}
+    {"id": "confirm_save", "op": "key", "key": "return", "precondition": {}, "postcondition": {}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Confirm the save"},
+    {"id": "verify_saved_file", "op": "wait", "seconds": 2, "precondition": {}, "postcondition": {"file_exists": "{{filename}}.docx", "location": "{{location}}"}, "timeout": 2, "retry_limit": 1, "fallback": [], "why": "Verify that the document was written"}
   ]
 }

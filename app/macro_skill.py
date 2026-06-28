@@ -8,7 +8,7 @@ from typing import Any
 
 
 SCHEMA_VERSION = 2
-DESKTOP_OPS = {"open_app", "quit_app", "wait", "hotkey", "key", "type", "call"}
+DESKTOP_OPS = {"open_app", "quit_app", "wait", "hotkey", "key", "type", "call", "delete_file"}
 BROWSER_OPS = {"navigate", "click", "fill", "press", "select", "check", "uncheck", "scroll", "wait", "call"}
 ALLOWED_OPS = DESKTOP_OPS | BROWSER_OPS
 

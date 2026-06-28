@@ -23,7 +23,10 @@ def main():
     ap.add_argument("--repair", action="store_true", help="repair one failed transition and validate it")
     ap.add_argument("--events", action="store_true",
                     help="emit @@EV <json> lines on stdout for an external narrator (e.g. the voice agent)")
+    ap.add_argument("--params", default=None,
+                    help="JSON object of param overrides, e.g. a dynamic calculation")
     a = ap.parse_args()
+    overrides = json.loads(a.params) if a.params else None
 
     if not probe():
         raise SystemExit("Fix Screen Recording / Accessibility permissions first.")
@@ -59,7 +62,7 @@ def main():
                 hud.status("Candidate rejected")
 
         result = replay_verified(
-            macro, allow_repair=a.repair, registry=registry,
+            macro, params=overrides, allow_repair=a.repair, registry=registry,
             repair_service=RepairService(registry) if a.repair else None,
             on_event=event,
         )

@@ -32,6 +32,17 @@ class MacOSDesktopBackend:
             return {}
         if op == "wait":
             return {"settled_s": settle(max_wait=float(step.get("seconds", 2)))}
+        if op == "delete_file":
+            # deterministically remove the target before saving, so the GUI Save never stalls on
+            # the macOS "replace existing file?" dialog (this is the duplicate-filename fix).
+            location = _location_path(step.get("location", "Desktop"))
+            fname = step["filename"]
+            fname = fname if fname.endswith(".docx") else f"{fname}.docx"
+            try:
+                os.remove(location / fname)
+                return {"deleted": str(location / fname)}
+            except FileNotFoundError:
+                return {"deleted": None}
         if op == "hotkey":
             pyautogui.hotkey(*[_KEYMAP.get(key.lower(), key.lower()) for key in step["keys"]])
         elif op == "key":
