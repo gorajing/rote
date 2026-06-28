@@ -33,11 +33,11 @@ Rote watches Gemini 3.5 Flash operate a real computer, **compiles the successful
 
 **Two Gemini roles:**
 
-| Role | When it runs | What it produces |
-|------|--------------|------------------|
-| **Doer** | Stage 1 (record) | Annotated intent log: per-step reasoning, actions, coordinates |
+| Role         | When it runs      | What it produces                                                    |
+| ------------ | ----------------- | ------------------------------------------------------------------- |
+| **Doer**     | Stage 1 (record)  | Annotated intent log: per-step reasoning, actions, coordinates      |
 | **Compiler** | Stage 2 (compile) | A v2 macro JSON with keyboard-first ops and verification conditions |
-| **Repairer** | Stage 4 (repair) | 1–6 replacement steps for the single failed transition |
+| **Repairer** | Stage 4 (repair)  | 1–6 replacement steps for the single failed transition              |
 
 Replay and validation never call a model. Repair is the only model touchpoint after compilation.
 
@@ -47,12 +47,13 @@ Replay and validation never call a model. Repair is the only model touchpoint af
 
 Rote supports two execution surfaces through a **shared replay/repair engine**:
 
-| Surface | Backend | Input targeting | Example skills |
-|---------|---------|-----------------|----------------|
-| **desktop** | `MacOSDesktopBackend` in `app/verified_replay.py` | Keyboard shortcuts, app names (`pyautogui` + AppleScript) | `create_word_file`, `meeting_notes`, `calc_to_word` |
+| Surface     | Backend                                                | Input targeting                                                         | Example skills                                       |
+| ----------- | ------------------------------------------------------ | ----------------------------------------------------------------------- | ---------------------------------------------------- |
+| **desktop** | `MacOSDesktopBackend` in `app/verified_replay.py`      | Keyboard shortcuts, app names (`pyautogui` + AppleScript)               | `create_word_file`, `meeting_notes`, `calc_to_word`  |
 | **browser** | `PlaywrightBrowserBackend` in `app/browser_backend.py` | Semantic Playwright locators (`role`, `label`, `text`, `testid`, `css`) | `acme_settings_email`, `youtube_hackathon_top_video` |
 
 Both surfaces use the same:
+
 - Macro schema v2 (`app/macro_skill.py`)
 - Condition DSL (`app/verification.py`)
 - Verified replay loop (`app/verified_replay.py`)
@@ -63,21 +64,21 @@ Both surfaces use the same:
 
 ## 4. Module map
 
-| Module | Responsibility |
-|--------|----------------|
-| `app/desktop_cu.py` | Desktop **doer**: Gemini CU + `pyautogui`. Also supports legacy `--replay` of v1 macros and dynamic waits (`ensure_app`, `settle`). |
-| `app/desktop_skill_compiler.py` | Desktop-specific compiler (trace → macro). |
-| `app/universal_skill_compiler.py` | Unified compiler entry point for `desktop` or `browser` surfaces. |
-| `app/macro_skill.py` | Schema v2 contracts, legacy v1 → v2 migration, parameter binding (`{{param}}`), validation. |
-| `app/verified_replay.py` | **Shared replay engine**: expand subskills, check pre/postconditions per step, run final checker, optionally delegate to repair. |
-| `app/verification.py` | Surface-neutral condition DSL and final checkers (files, DOCX, HTTP JSON, composed conditions). |
-| `app/skill_repair.py` | Localized Gemini repair, candidate creation, clean-state end-to-end validation, promotion/rejection. |
-| `app/local_skill_registry.py` | Atomic JSON version store under `database/skills/registry/` (gitignored). |
-| `app/self_improve.py` | CLI for desktop replay / repair / demo / history. |
-| `app/browser_backend.py` | Playwright execution + page state inspection. |
-| `app/browser_self_improve.py` | CLI for browser replay / repair. |
-| `app/notch.py` + `app/desktop_hud.py` | macOS Dynamic Island-style HUD for live replay narration. |
-| `database/skills/*.macro.json` | Source-of-truth skill definitions (v1 or v2). Runtime versions live in `registry/`. |
+| Module                                | Responsibility                                                                                                                      |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `app/desktop_cu.py`                   | Desktop **doer**: Gemini CU + `pyautogui`. Also supports legacy `--replay` of v1 macros and dynamic waits (`ensure_app`, `settle`). |
+| `app/desktop_skill_compiler.py`       | Desktop-specific compiler (trace → macro).                                                                                          |
+| `app/universal_skill_compiler.py`     | Unified compiler entry point for `desktop` or `browser` surfaces.                                                                   |
+| `app/macro_skill.py`                  | Schema v2 contracts, legacy v1 → v2 migration, parameter binding (`{{param}}`), validation.                                         |
+| `app/verified_replay.py`              | **Shared replay engine**: expand subskills, check pre/postconditions per step, run final checker, optionally delegate to repair.    |
+| `app/verification.py`                 | Surface-neutral condition DSL and final checkers (files, DOCX, HTTP JSON, composed conditions).                                     |
+| `app/skill_repair.py`                 | Localized Gemini repair, candidate creation, clean-state end-to-end validation, promotion/rejection.                                |
+| `app/local_skill_registry.py`         | Atomic JSON version store under `database/skills/registry/` (gitignored).                                                           |
+| `app/self_improve.py`                 | CLI for desktop replay / repair / demo / history.                                                                                   |
+| `app/browser_backend.py`              | Playwright execution + page state inspection.                                                                                       |
+| `app/browser_self_improve.py`         | CLI for browser replay / repair.                                                                                                    |
+| `app/notch.py` + `app/desktop_hud.py` | macOS Dynamic Island-style HUD for live replay narration.                                                                           |
+| `database/skills/*.macro.json`        | Source-of-truth skill definitions (v1 or v2). Runtime versions live in `registry/`.                                                 |
 
 ---
 
@@ -98,9 +99,23 @@ Every skill is a JSON file (`*.macro.json`) with `schema_version: 2`.
   "parent_version": null,
   "status": "active",
   "params": { "text": "Hello", "filename": "demo", "location": "Desktop" },
-  "checker": { "type": "word_docx", "location": "{{location}}", "filename": "{{filename}}.docx", "contains": "{{text}}" },
-  "stats": { "uses": 0, "successes": 0, "failures": 0, "success_rate": 0.0, "avg_duration": 0.0, "model_calls": 0 },
-  "steps": [ /* see below */ ]
+  "checker": {
+    "type": "word_docx",
+    "location": "{{location}}",
+    "filename": "{{filename}}.docx",
+    "contains": "{{text}}"
+  },
+  "stats": {
+    "uses": 0,
+    "successes": 0,
+    "failures": 0,
+    "success_rate": 0.0,
+    "avg_duration": 0.0,
+    "model_calls": 0
+  },
+  "steps": [
+    /* see below */
+  ]
 }
 ```
 
@@ -179,10 +194,12 @@ Entry point: `replay_verified()` in `app/verified_replay.py`.
 ### Backend `inspect()` state
 
 **Desktop** (`MacOSDesktopBackend.inspect()`):
+
 - `foreground_app`, `windows`, `ui_text`
 - `word_document_count`, `running_apps`, `clipboard`
 
 **Browser** (`PlaywrightBrowserBackend.inspect()`):
+
 - `url`, `title`, `visible_text`
 
 ### Result shape
@@ -212,17 +229,17 @@ Defined in `app/verification.py`. Used for step pre/postconditions and final che
 
 ### Leaf conditions
 
-| Key | Meaning |
-|-----|---------|
-| `foreground_app` | Exact foreground app name (desktop) |
-| `app_running` | App appears in running process list |
-| `app_window` / `ui_text` / `dialog` | Substring match in window or UI text |
-| `word_document` | `true` → Word has ≥1 open document |
-| `clipboard_contains` | Substring in clipboard |
-| `url_contains` / `title_contains` / `text_contains` | Substring match (browser) |
-| `element_visible` | Text appears in page visible text |
-| `file_exists` | File exists at location + filename |
-| `state_equals` | Dot-path lookup into inspect state |
+| Key                                                 | Meaning                              |
+| --------------------------------------------------- | ------------------------------------ |
+| `foreground_app`                                    | Exact foreground app name (desktop)  |
+| `app_running`                                       | App appears in running process list  |
+| `app_window` / `ui_text` / `dialog`                 | Substring match in window or UI text |
+| `word_document`                                     | `true` → Word has ≥1 open document   |
+| `clipboard_contains`                                | Substring in clipboard               |
+| `url_contains` / `title_contains` / `text_contains` | Substring match (browser)            |
+| `element_visible`                                   | Text appears in page visible text    |
+| `file_exists`                                       | File exists at location + filename   |
+| `state_equals`                                      | Dot-path lookup into inspect state   |
 
 ### Composition
 
@@ -234,13 +251,13 @@ Defined in `app/verification.py`. Used for step pre/postconditions and final che
 
 ### Final checkers (`check_final`)
 
-| Type | Validates |
-|------|-----------|
-| `condition` | Any condition DSL expression against final state |
-| `word_docx` | DOCX file exists and contains expected text (unzips `word/document.xml`) |
-| `file` / `text_file` | Plain file existence + text content |
-| `http_json` | HTTP GET/POST, then dot-path equality on JSON response |
-| `all` / `any` | Compose multiple checkers |
+| Type                 | Validates                                                                |
+| -------------------- | ------------------------------------------------------------------------ |
+| `condition`          | Any condition DSL expression against final state                         |
+| `word_docx`          | DOCX file exists and contains expected text (unzips `word/document.xml`) |
+| `file` / `text_file` | Plain file existence + text content                                      |
+| `http_json`          | HTTP GET/POST, then dot-path equality on JSON response                   |
+| `all` / `any`        | Compose multiple checkers                                                |
 
 Checkers are **never self-reported by the model**. They read filesystem, HTTP endpoints, or OS state. This is the integrity spine: memory is success-gated.
 
@@ -253,6 +270,7 @@ Entry point: `RepairService.repair_and_validate()` in `app/skill_repair.py`.
 ### When repair triggers
 
 Repair runs only when:
+
 1. `replay_verified(..., allow_repair=True, repair_service=...)` is called, AND
 2. A step precondition/postcondition or the final checker fails.
 
@@ -311,11 +329,11 @@ Operations: `load_skill`, `create_candidate`, `promote`, `reject`, `record_run`,
 
 The branch includes **deterministic stale fixtures** for live demos:
 
-| Skill | Purpose |
-|-------|---------|
-| `stale_ensure_blank_document` | Subskill that omits `Cmd+N` — Word opens but no document is created |
-| `stale_create_word_file` | Root workflow that calls the stale subskill |
-| `stale_youtube_hackathon_video` | Browser-side stale fixture |
+| Skill                           | Purpose                                                             |
+| ------------------------------- | ------------------------------------------------------------------- |
+| `stale_ensure_blank_document`   | Subskill that omits `Cmd+N` — Word opens but no document is created |
+| `stale_create_word_file`        | Root workflow that calls the stale subskill                         |
+| `stale_youtube_hackathon_video` | Browser-side stale fixture                                          |
 
 `reset_stale_word()` creates the drift state: Word is frontmost with **zero open documents**. Replay fails at the subskill's postcondition (`word_document: true`). Repair generates a replacement step (typically `Cmd+N`), validates end-to-end, and promotes.
 
@@ -402,10 +420,10 @@ Repairing `ensure_blank_document` v1 → v2 benefits both `create_word_file` and
 
 ## 12. Tests
 
-| File | What it covers |
-|------|----------------|
+| File                           | What it covers                                                                                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tests/test_self_improving.py` | v1 migration, parameter resolution, verified replay with fake backend, repair patch cleaning, candidate promotion/rejection, subskill propagation |
-| `tests/test_cross_surface.py` | Browser semantic target validation, shared replay engine on browser skills, condition composition, HTTP/file checkers |
+| `tests/test_cross_surface.py`  | Browser semantic target validation, shared replay engine on browser skills, condition composition, HTTP/file checkers                             |
 
 Run:
 
@@ -430,11 +448,11 @@ Tests use `FakeBackend` / `BrowserStateBackend` — no real OS or browser requir
 
 ## 14. Measured performance (desktop, this branch)
 
-| Task | Doer (Gemini CU) | Verified replay | Speedup |
-|------|------------------|-----------------|---------|
-| Create Word file | 130s · 124,859 tok | 16s · **0 tok** | ~8× |
-| Formatted meeting notes | 175s · 173,351 tok | 23s · **0 tok** | ~7.6× |
-| Calculator → Word | 132s · 256,063 tok | 17–35s · **0 tok** | ~4–8× |
+| Task                    | Doer (Gemini CU)   | Verified replay    | Speedup |
+| ----------------------- | ------------------ | ------------------ | ------- |
+| Create Word file        | 130s · 124,859 tok | 16s · **0 tok**    | ~8×     |
+| Formatted meeting notes | 175s · 173,351 tok | 23s · **0 tok**    | ~7.6×   |
+| Calculator → Word       | 132s · 256,063 tok | 17–35s · **0 tok** | ~4–8×   |
 
 The headline demo metric: **CU model calls: N → 0** on verified replay.
 
@@ -456,6 +474,7 @@ The local versioned registry and localized repair lifecycle are fully implemente
 ## 16. Quick mental model for agents
 
 When asked to **add a new skill:**
+
 1. Record a successful CU trace (Stage 1).
 2. Compile it with `universal_skill_compiler` (Stage 2).
 3. Add a deterministic `checker` that reads external state.
@@ -463,12 +482,14 @@ When asked to **add a new skill:**
 5. Test with `self_improve replay <name>`.
 
 When asked to **debug a failing replay:**
+
 1. Read `failed_step_id` and `failure.reason` in the result JSON.
 2. Inspect `failure.state` — what did the backend see?
 3. Check whether pre/postconditions match the actual UI state.
 4. If the skill is intentionally stale, run `self_improve demo <name>` to exercise repair.
 
 When asked to **extend to a new surface:**
+
 1. Implement a backend with `execute(step)` and `inspect() -> dict`.
 2. Add allowed ops to `BROWSER_OPS` or a new op set in `macro_skill.py`.
 3. Extend `evaluate_condition()` if new state keys are needed.
@@ -478,15 +499,93 @@ When asked to **extend to a new surface:**
 
 ## 17. File index (skills shipped on this branch)
 
-| File | Surface | Description |
-|------|---------|-------------|
-| `ensure_blank_document.macro.json` | desktop | Shared subskill: open Word + Cmd+N |
-| `save_word_document.macro.json` | desktop | Shared subskill: Cmd+S save flow |
-| `create_word_file.macro.json` | desktop | Compose ensure + type + save |
-| `meeting_notes.macro.json` | desktop | Formatted document workflow |
-| `calc_to_word.macro.json` | desktop | Calculator → clipboard → Word |
-| `stale_ensure_blank_document.macro.json` | desktop | Stale subskill (no Cmd+N) for demo |
-| `stale_create_word_file.macro.json` | desktop | Root stale demo workflow |
-| `acme_settings_email.macro.json` | browser | Settings form + HTTP checker |
-| `youtube_hackathon_top_video.macro.json` | browser | YouTube search workflow |
-| `stale_youtube_hackathon_video.macro.json` | browser | Stale browser demo fixture |
+| File                                       | Surface | Description                        |
+| ------------------------------------------ | ------- | ---------------------------------- |
+| `ensure_blank_document.macro.json`         | desktop | Shared subskill: open Word + Cmd+N |
+| `save_word_document.macro.json`            | desktop | Shared subskill: Cmd+S save flow   |
+| `create_word_file.macro.json`              | desktop | Compose ensure + type + save       |
+| `meeting_notes.macro.json`                 | desktop | Formatted document workflow        |
+| `calc_to_word.macro.json`                  | desktop | Calculator → clipboard → Word      |
+| `stale_ensure_blank_document.macro.json`   | desktop | Stale subskill (no Cmd+N) for demo |
+| `stale_create_word_file.macro.json`        | desktop | Root stale demo workflow           |
+| `acme_settings_email.macro.json`           | browser | Settings form + HTTP checker       |
+| `youtube_hackathon_top_video.macro.json`   | browser | YouTube search workflow            |
+| `stale_youtube_hackathon_video.macro.json` | browser | Stale browser demo fixture         |
+
+---
+
+## 18. General applicability vs current scope
+
+**Short answer:** The replay/repair **engine is task-agnostic** at the surface level (desktop macOS or browser). The **shipped, end-to-end-validated skills are limited to a handful of tasks**. Extending to a new task requires authoring a macro, checker, and (for repair) a reset — not rewriting the engine.
+
+### What is already generic (framework-level)
+
+These layers work for **any skill that conforms to macro schema v2** on a supported surface:
+
+| Layer                         | Scope                                                     |
+| ----------------------------- | --------------------------------------------------------- |
+| `verified_replay.py`          | Shared replay loop for desktop and browser                |
+| `macro_skill.py`              | Schema v2, subskill `call` composition, parameter binding |
+| `verification.py`             | Condition DSL + file / DOCX / HTTP checkers               |
+| `skill_repair.py`             | Localized Gemini patch → validate → promote/reject        |
+| `local_skill_registry.py`     | Versioning, candidate lifecycle, history                  |
+| `universal_skill_compiler.py` | Compile any CU trace into a v2 macro (per surface)        |
+
+If a v2 macro exists with valid pre/postconditions and an external checker, `replay` and `repair` run without task-specific code paths.
+
+### What is currently limited (shipped skills & demos)
+
+Only a **small set of tasks** has macros, checkers, and (where needed) reset hooks wired up end-to-end:
+
+**Desktop (macOS):**
+
+- Word workflows: `create_word_file`, `meeting_notes`
+- Multi-app: `calculator_to_word_save` (Calculator → clipboard → Word)
+- Shared subskills: `ensure_blank_document`, `save_word_document`
+- Stale demo fixtures: `stale_*`
+
+**Browser:**
+
+- `acme_settings_email` (HTTP checker + HTTP reset)
+- `youtube_hackathon_top_video`
+- Stale demo fixture: `stale_youtube_hackathon_video`
+
+Tests (`test_self_improving.py`, `test_cross_surface.py`) exercise these patterns with fake backends — not arbitrary new tasks.
+
+### Why it does not apply to every task out of the box
+
+1. **A compiled macro is a prerequisite.** Self-improvement assumes Stage 2 is done: a v2 macro with step conditions and a final checker. For a new task you must run record → compile → define verification before replay/repair applies.
+
+2. **Desktop backend constraints.**
+   - macOS only (`pyautogui` + AppleScript).
+   - Keyboard-first ops only — no coordinate clicks. Tasks that depend on visual clicking are hard to express as macros.
+   - `inspect()` includes Word-centric state (`word_document_count`). Other apps need conditions built from generic keys (`foreground_app`, `ui_text`, `clipboard`, etc.).
+
+3. **Repair validation needs a task-specific reset.**
+   - `RepairService` replays the full workflow from a clean state after patching.
+   - Desktop `repair` defaults to `reset_word()` — appropriate for Word skills, not necessarily for Calculator-only or other apps.
+   - Browser skills declare reset in the macro JSON (`reset.type: http`, `start_url`) — this pattern is more portable.
+   - The `demo` command hardcodes `reset_stale_word()` and is **Word stale-demo only**.
+
+4. **Checkers must be externally verifiable.** Success is never model self-report. Each new task needs a checker that reads filesystem, HTTP, or OS state — otherwise promotion has nothing deterministic to gate on.
+
+### Extending to a new task
+
+No engine rewrite is required. The checklist is:
+
+```
+1. Record a successful CU trace (Stage 1)
+2. Compile with universal_skill_compiler or desktop_skill_compiler (Stage 2)
+3. Add/refine step pre/postconditions for fast failure on drift
+4. Add a deterministic final checker (file, DOCX, HTTP JSON, or condition)
+5. For repair: provide a reset function or macro reset block for clean-state validation
+6. Test: self_improve replay <name>  →  self_improve repair <name>
+```
+
+### Summary table
+
+| Question                               | Answer                                                                                              |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Is the engine generic?                 | **Yes** — any v2 macro on desktop (macOS) or browser can use replay + localized repair + versioning |
+| Do all tasks work today without setup? | **No** — only Word / Calculator / YouTube / Acme-style tasks are fully wired                        |
+| What does a new task require?          | Macro + checker + (for repair) reset — not a new replay engine                                      |
