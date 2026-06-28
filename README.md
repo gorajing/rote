@@ -70,6 +70,25 @@ Runtime versions are stored atomically under `database/skills/registry/` and are
 gitignored. `create_word_file` and `meeting_notes` share `ensure_blank_document` and
 `save_word_document`, so a promoted subskill repair transfers to both workflows.
 
+The same replay and repair engine supports both surfaces:
+
+```bash
+# Multi-app desktop workflow with clipboard and DOCX verification
+python -m app.self_improve replay calculator_to_word_save
+
+# Semantic Playwright workflow with HTTP application-state verification
+python -m app.browser_self_improve replay acme_settings_email --headless
+python -m app.browser_self_improve repair acme_settings_email --headless
+
+# Compile a new successful trace for either surface
+python -m app.universal_skill_compiler --surface browser --trace traces/run.json --out database/skills/new.macro.json
+```
+
+Browser skills use semantic targets (`role`, `label`, `text`, `testid`, or `css`) rather than
+stored coordinates. Final checkers can validate browser state, files, clipboard state, or a
+deterministic HTTP JSON endpoint. New applications only need a macro and an externally verifiable
+checker; the versioning and localized repair lifecycle is shared.
+
 ### Two reliability features worth knowing
 - **Dynamic waits** (`ensure_app` / `settle` in `app/desktop_cu.py`) — instead of a fixed `sleep`, it polls macOS for app-readiness and watches the screen locally until it stops changing, then proceeds. An already-open app continues in ~0.3s instead of 6s.
 - **Notch HUD** (`app/notch.py`) — a Dynamic-Island-style status pill at the MacBook notch (AppKit via PyObjC), narrating each step with a live spinner + progress bar so a 2s app-load never looks frozen. Shows on **all Spaces** and never steals keyboard focus.
@@ -102,6 +121,8 @@ A flat list of steps replayed top to bottom. Ops:
 | `app/desktop_cu.py` | ✅ | desktop doer (Gemini CU + pyautogui), `replay()`, dynamic waits (`ensure_app`/`settle`) |
 | `app/desktop_skill_compiler.py` | ✅ | **the desktop compiler** — Gemini reads an intent log → writes a macro |
 | `app/verified_replay.py` | ✅ | step pre/postconditions, parameter binding, subskill expansion, deterministic checker |
+| `app/verification.py` | ✅ | shared desktop/browser condition DSL and file/HTTP/state checkers |
+| `app/browser_backend.py` | ✅ | semantic Playwright execution backend for the shared replay engine |
 | `app/local_skill_registry.py` | ✅ | local candidate/version history and success-gated promotion |
 | `app/skill_repair.py` | ✅ | localized Gemini patch generation and clean end-to-end validation |
 | `app/notch.py` | ✅ | Dynamic-Island notch HUD (AppKit / PyObjC) |
