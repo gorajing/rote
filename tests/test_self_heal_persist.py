@@ -112,6 +112,31 @@ class SelfHealPersistTests(unittest.TestCase):
         self.assertEqual(r["healed"], [])
         self.assertEqual(skill.steps[0].pre.crop_b64, _WRONG_CROP)
 
+    def test_persisted_heal_survives_store_roundtrip(self):
+        """The DURABLE claim, end to end: a heal saved to the store and reloaded FROM DISK still
+        replays at 0 CU. Self-improvement persists across a process restart, not just within one
+        in-memory object — which is the whole point of 'memory that doesn't rot'."""
+        import tempfile
+        from app.fusion.skill_store import FusionSkillStore
+        skill = _skill(_WRONG_CROP)
+        orig = dispatch._escalate
+        dispatch._escalate = self._mock_escalate()
+        try:
+            r1 = dispatch.replay(skill, _FakeExec(), _Verifier(True), heal=True)
+        finally:
+            dispatch._escalate = orig
+        self.assertEqual(r1["healed"], [0])
+
+        with tempfile.TemporaryDirectory() as root:
+            store = FusionSkillStore(root)
+            store.save_promoted(skill, verified=True, cu_calls=r1["cu_calls"], reason="self-heal")
+            reloaded = store.load_active("t")                  # a fresh object, parsed from JSON on disk
+        self.assertIsNotNone(reloaded)
+        self.assertNotEqual(reloaded.steps[0].pre.crop_b64, _WRONG_CROP)   # the re-cut crop was persisted
+
+        r2 = dispatch.replay(reloaded, _FakeExec(), _Verifier(True), heal=True)
+        self.assertEqual(r2["cu_calls"], 0)                    # reloaded from disk -> still 0 CU
+
 
 if __name__ == "__main__":
     unittest.main()

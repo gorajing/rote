@@ -92,6 +92,16 @@ def _extract_crop(shot_bytes: bytes, nx: int, ny: int):
         return None
 
 
+def _is_distinctive(crop_b64: str) -> bool:
+    """A crop with real texture (pixel variance) re-localizes to a UNIQUE spot; a flat/low-texture
+    crop matches almost anywhere and, if baked in, would HIT the wrong place forever (self-heal could
+    never recover it). So only a heal crop carrying enough signal to re-find itself is persisted."""
+    try:
+        return float(_decode(crop_b64).std()) >= 12.0   # flat UI regions sit near 0; real targets >> this
+    except Exception:
+        return False
+
+
 # Gemini CU action names -> the two executor primitives. The contract narrows every surface to
 # click/drag (spatial) + open_app/hotkey/key/type/wait (keyboard); when self-healing a single
 # step we fold the model's richer action space down onto that floor.
@@ -234,8 +244,8 @@ def replay(skill: FusedSkill, executor: Executor, verifier: Verifier, *,
                         cu_calls += 1
                         if heal and _ok(res) and res.get("_heal_coords") and step.pre is not None:
                             fresh = _extract_crop(res["_heal_shot"], *res["_heal_coords"])
-                            if fresh:
-                                pending_heals[i] = fresh   # applied later iff the whole run verifies
+                            if fresh and _is_distinctive(fresh):   # don't bake a flat 'hit-anywhere' crop
+                                pending_heals[i] = fresh           # applied later iff the whole run verifies
                         _emit(StepResult(index=i, primitive=primitive, tier="model",
                                                   cu_calls=1, score=score, ok=_ok(res)))
                 else:
