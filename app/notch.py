@@ -28,7 +28,7 @@ from Quartz import (
     CGPathAddLineToPoint, CGPathAddArcToPoint, CGPathCloseSubpath,
 )
 
-W, H, RB = 320.0, 62.0, 22.0
+W, H, RB = 320.0, 86.0, 28.0      # taller: ~54px of breathing room below the 32px notch strip
 NOTCH_TOP = 32.0
 ACCENT = (0.12, 0.56, 1.0)
 GREEN = (0.20, 0.84, 0.38)
@@ -139,13 +139,13 @@ class NotchIsland:
         grad.setShadowOpacity_(0.35); grad.setShadowRadius_(8.0); grad.setShadowOffset_((0, -2))
         grad.setShadowPath_(shape)
 
-        cy = (H - NOTCH_TOP) / 2.0 + 1
-        d = 16.0
+        cy = (H - NOTCH_TOP) / 2.0 + 2                    # vertical center of the roomy below-notch area
+        d = 19.0
         spin = CAShapeLayer.layer()
-        spin.setBounds_(CGRectMake(0, 0, d, d)); spin.setPosition_((26.0, cy))
+        spin.setBounds_(CGRectMake(0, 0, d, d)); spin.setPosition_((30.0, cy))
         spin.setPath_(CGPathCreateWithEllipseInRect(CGRectMake(0, 0, d, d), None))
         spin.setStrokeColor_(_cg(ACCENT)); spin.setFillColor_(NSColor.clearColor().CGColor())
-        spin.setLineWidth_(2.3); spin.setLineCap_("round")
+        spin.setLineWidth_(2.6); spin.setLineCap_("round")
         spin.setStrokeStart_(0.0); spin.setStrokeEnd_(0.72)
         if not self._reduce:
             rot = CABasicAnimation.animationWithKeyPath_("transform.rotation.z")
@@ -153,16 +153,16 @@ class NotchIsland:
             rot.setRepeatCount_(1e9); spin.addAnimation_forKey_(rot, "spin")
         lay.addSublayer_(spin); self._spin = spin
 
-        self._title = _text_layer(46, cy - 1, W - 150, 17, 12.5, True)
-        self._sub = _text_layer(46, cy - 15, W - 150, 13, 9.5, False, a=0.55)
+        self._title = _text_layer(52, cy + 1, W - 162, 19, 13.5, True)
+        self._sub = _text_layer(52, cy - 17, W - 162, 15, 10.5, False, a=0.55)
         lay.addSublayer_(self._title); lay.addSublayer_(self._sub)
 
-        self._px, self._pw = W - 90, 68.0
+        self._px, self._pw = W - 96, 72.0
         track = CAShapeLayer.layer()
-        track.setFrame_(CGRectMake(self._px, cy - 1, self._pw, 4)); track.setCornerRadius_(2)
+        track.setFrame_(CGRectMake(self._px, cy, self._pw, 5)); track.setCornerRadius_(2.5)
         track.setBackgroundColor_(_white(0.16)); lay.addSublayer_(track)
         self._fill = CAShapeLayer.layer()
-        self._fill.setFrame_(CGRectMake(self._px, cy - 1, 3, 4)); self._fill.setCornerRadius_(2)
+        self._fill.setFrame_(CGRectMake(self._px, cy, 3, 5)); self._fill.setCornerRadius_(2.5)
         self._fill.setBackgroundColor_(_cg(ACCENT)); lay.addSublayer_(self._fill)
         self._cy = cy; self._lay = lay
 
@@ -226,7 +226,7 @@ class NotchIsland:
         self._title.setString_((msg[:30] + "…") if len(msg) > 31 else msg)
         self._sub.setString_("complete" if st["done"] else f"step {st['i']} of {st['total']}")
         frac = max(0.04, min(1.0, st["i"] / max(1, st["total"])))
-        self._fill.setFrame_(CGRectMake(self._px, self._cy - 1, self._pw * frac, 4))
+        self._fill.setFrame_(CGRectMake(self._px, self._cy, self._pw * frac, 5))
         if st["done"]:
             self._spin.setStrokeColor_(_cg(GREEN)); self._spin.setStrokeEnd_(1.0)
             self._spin.removeAnimationForKey_("spin"); self._fill.setBackgroundColor_(_cg(GREEN))
