@@ -17,6 +17,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -65,6 +66,19 @@ def flatten_macro(macro: dict, registry=None) -> dict:
 _NON_MACRO_KEYS = {"_id", "score", "embedding", "doc_type", "description",
                    "verified", "created_at", "site", "platform"}
 
+_PLACEHOLDER = re.compile(r"\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}")
+
+
+def _placeholders(obj) -> set:
+    """Every {{name}} referenced anywhere inside a macro (steps + checker)."""
+    if isinstance(obj, str):
+        return set(_PLACEHOLDER.findall(obj))
+    if isinstance(obj, list):
+        return set().union(*(_placeholders(x) for x in obj)) if obj else set()
+    if isinstance(obj, dict):
+        return set().union(*(_placeholders(v) for v in obj.values())) if obj else set()
+    return set()
+
 
 def _doc_to_macro(doc: dict) -> dict | None:
     """Coerce a `tasks` document into a replayable macro, or None if it isn't one.
@@ -81,6 +95,12 @@ def _doc_to_macro(doc: dict) -> dict | None:
     macro.setdefault("name", doc.get("name") or "task")
     macro.setdefault("surface", doc.get("surface", "desktop"))
     macro.setdefault("params", {})
+    # Only treat as replayable if every {{placeholder}} has a default value in params. This rejects
+    # broken docs (e.g. older 'variables'-only skills with no param values) so the agent never tries
+    # to replay something whose placeholders it can't fill -> it cleanly learns the task instead.
+    referenced = _placeholders(macro.get("steps", [])) | _placeholders(macro.get("checker", {}))
+    if referenced - set(macro["params"]):            # a placeholder with no default value
+        return None
     return macro
 
 

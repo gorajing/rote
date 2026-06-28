@@ -28,6 +28,18 @@ class DocToMacroTests(unittest.TestCase):
         self.assertIsNotNone(macro)
         self.assertEqual(macro["steps"][0]["op"], "open_app")
 
+    def test_placeholders_without_params_is_not_replayable(self):
+        # an older 'variables'-only skill: steps reference {{a}} but params is empty -> reject
+        doc = {"name": "broken", "surface": "desktop", "params": {},
+               "variables": {"a": {"type": "number"}},
+               "steps": [{"id": "s1", "op": "type", "text": "{{a}}"}]}
+        self.assertIsNone(skill_store._doc_to_macro(doc))
+
+    def test_placeholders_covered_by_params_is_replayable(self):
+        doc = {"name": "ok", "surface": "desktop", "params": {"a": "1"},
+               "steps": [{"id": "s1", "op": "type", "text": "{{a}}"}]}
+        self.assertIsNotNone(skill_store._doc_to_macro(doc))
+
     def test_foreign_trace_is_not_replayable(self):
         # the teammate's execution_trace docs have no macro and non-macro steps
         doc = {"doc_type": "execution_trace", "description": "send an email",
