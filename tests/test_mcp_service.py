@@ -9,6 +9,12 @@ from app.mcp_service import MCPService, ServiceError
 from app.skill_search_index import build_documents, skill_document
 from database import api as database_api
 
+try:                                   # fastmcp is a declared but optional dep (the MCP server lane)
+    import fastmcp  # noqa: F401
+    _HAS_FASTMCP = True
+except ImportError:
+    _HAS_FASTMCP = False
+
 
 def macro(name="demo", version=1, surface="desktop", status="active"):
     return {
@@ -121,6 +127,7 @@ class DatabaseAPITests(unittest.TestCase):
             database_api.retrieve("query", 51)
 
 
+@unittest.skipUnless(_HAS_FASTMCP, "fastmcp not installed (optional MCP dependency)")
 class FastMCPContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_server_exposes_expected_tools_in_memory(self):
         from fastmcp import Client
