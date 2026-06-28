@@ -43,9 +43,11 @@ class RealWebSkillLabTests(unittest.TestCase):
         skill = build_hybrid_skill(SNAPSHOT)
         validate_hybrid_skill(skill)
         with tempfile.TemporaryDirectory() as folder:
-            path = save_hybrid_skill(skill, Path(folder) / "learned.hybrid.json")
+            path = save_hybrid_skill(skill, Path(folder) / "built.hybrid.json")
             saved = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(saved["kind"], "hybrid_skill")
+        self.assertIn("built_at", saved)
+        self.assertNotIn("learned_at", saved)
         self.assertEqual(saved["segments"][0]["surface"], "browser")
         self.assertEqual(saved["segments"][1]["surface"], "desktop")
 

@@ -1,4 +1,4 @@
-"""Learn and replay safe real-web + native-Mac hybrid skills."""
+"""Synthesize and replay safe real-web + native-Mac hybrid skills."""
 from __future__ import annotations
 
 import argparse
@@ -102,7 +102,7 @@ def build_browser_skill(snapshot: PageSnapshot) -> dict:
         "steps": [
             {"id": "open_real_page", "op": "navigate", "url": "{{url}}",
              "precondition": {}, "postcondition": condition,
-             "timeout": 15, "retry_limit": 1, "fallback": [], "why": "Open the learned real web page"},
+             "timeout": 15, "retry_limit": 1, "fallback": [], "why": "Open the real web page"},
         ],
     }
     validate_macro(skill)
@@ -120,7 +120,7 @@ def build_textedit_skill(snapshot: PageSnapshot) -> dict:
         "version": 1,
         "parent_version": None,
         "status": "active",
-        "note": "Write a learned real-web research note into TextEdit.",
+        "note": "Write a real-web research note into TextEdit.",
         "params": {"note_text": text, "marker": snapshot.marker},
         "checker": {
             "type": "condition",
@@ -141,7 +141,7 @@ def build_textedit_skill(snapshot: PageSnapshot) -> dict:
             {"id": "write_real_web_note", "op": "type", "text": "{{note_text}}",
              "precondition": {"foreground_app": "TextEdit"},
              "postcondition": {"textedit_document_contains": "{{marker}}"},
-             "timeout": 8, "retry_limit": 0, "fallback": [], "why": "Write the learned web summary"},
+             "timeout": 8, "retry_limit": 0, "fallback": [], "why": "Write the web summary"},
         ],
     }
     validate_macro(skill)
@@ -166,7 +166,7 @@ def build_hybrid_skill(snapshot: PageSnapshot) -> dict:
             "type": "condition",
             "condition": {"textedit_document_contains": "{{marker}}"},
         },
-        "learned_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
 
 
@@ -253,21 +253,21 @@ def replay_hybrid_skill(skill: dict, *, headless: bool = True, keep_open: float 
     }
 
 
-def learn(url: str, *, out: str | Path = DEFAULT_SKILL_PATH, headless: bool = True) -> tuple[dict, Path]:
+def synthesize(url: str, *, out: str | Path = DEFAULT_SKILL_PATH, headless: bool = True) -> tuple[dict, Path]:
     snapshot = capture_page(url, headless=headless)
     skill = build_hybrid_skill(snapshot)
     return skill, save_hybrid_skill(skill, out)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Learn or replay real-web + Mac app skills")
+    parser = argparse.ArgumentParser(description="Synthesize or replay real-web + Mac app skills")
     sub = parser.add_subparsers(dest="command", required=True)
-    learn_parser = sub.add_parser("learn")
-    learn_parser.add_argument("--url", default=DEFAULT_REAL_URL)
-    learn_parser.add_argument("--out", default=str(DEFAULT_SKILL_PATH))
-    learn_parser.add_argument("--visible", action="store_true", help="show the browser while learning")
-    learn_parser.add_argument("--replay", action="store_true", help="replay immediately after learning")
-    learn_parser.add_argument("--keep-open", type=float, default=0.0)
+    build_parser = sub.add_parser("build")
+    build_parser.add_argument("--url", default=DEFAULT_REAL_URL)
+    build_parser.add_argument("--out", default=str(DEFAULT_SKILL_PATH))
+    build_parser.add_argument("--visible", action="store_true", help="show the browser while capturing the page snapshot")
+    build_parser.add_argument("--replay", action="store_true", help="replay immediately after building")
+    build_parser.add_argument("--keep-open", type=float, default=0.0)
 
     replay_parser = sub.add_parser("replay")
     replay_parser.add_argument("skill", nargs="?", default=str(DEFAULT_SKILL_PATH))
@@ -275,11 +275,11 @@ def main() -> None:
     replay_parser.add_argument("--keep-open", type=float, default=0.0)
 
     args = parser.parse_args()
-    if args.command == "learn":
-        skill, path = learn(args.url, out=args.out, headless=not args.visible)
+    if args.command == "build":
+        skill, path = synthesize(args.url, out=args.out, headless=not args.visible)
         result: dict[str, Any] = {
             "ok": True,
-            "learned": skill["name"],
+            "built": skill["name"],
             "path": str(path),
             "url": skill["params"]["url"],
             "title": skill["params"]["title"],

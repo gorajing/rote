@@ -187,6 +187,7 @@ python -m app.digitalocean_demo --action restart --live
 ⚠️ The desktop track moves your real mouse and keyboard. Keep hands off while it runs; slam the mouse into a screen corner to abort (pyautogui failsafe).
 
 ## Next up
+- Wire the real `learn-cu` orchestrator to emit the hybrid artifact contract in `docs/LEARN_CU_ARTIFACT_CONTRACT.md`.
 - Run and record the stale Word fixture on the stage machine with its exact Word version.
 - Sync the local versioned registry to MongoDB Atlas so promoted skills can be shared across agents.
 - Generalize beyond Word/Calculator (Excel, browser, Mail) to prove the loop holds across surfaces.

@@ -63,7 +63,7 @@
             "timeout": 15,
             "retry_limit": 1,
             "fallback": [],
-            "why": "Open the learned real web page"
+            "why": "Open the real web page"
           }
         ]
       }
@@ -80,7 +80,7 @@
         "version": 1,
         "parent_version": null,
         "status": "active",
-        "note": "Write a learned real-web research note into TextEdit.",
+        "note": "Write a real-web research note into TextEdit.",
         "params": {
           "note_text": "Rote real web skill\nSource: https://www.iana.org/domains/reserved\nTitle: IANA-managed Reserved Domains\nHeading: IANA-managed Reserved Domains\nMarker: rote-real-web-e6c20c5d1a",
           "marker": "rote-real-web-e6c20c5d1a"
@@ -145,7 +145,7 @@
             "timeout": 8,
             "retry_limit": 0,
             "fallback": [],
-            "why": "Write the learned web summary"
+            "why": "Write the web summary"
           }
         ]
       }
@@ -157,5 +157,5 @@
       "textedit_document_contains": "{{marker}}"
     }
   },
-  "learned_at": "2026-06-28T07:12:37Z"
+  "built_at": "2026-06-28T07:12:37Z"
 }
