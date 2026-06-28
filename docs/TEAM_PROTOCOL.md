@@ -47,7 +47,7 @@ Owners are confirmed per-PR. Current map (fill in / correct as needed):
 | Fusion engine | `app/fusion/*` | Jin |
 | Voice agent | `app/voice_agent.py`, `app/desktop_hud.py` | Shah |
 | Retrieval / vector DB | `database/*` | Riccardo |
-| MCP server | (feat/mcp) | TBD |
+| MCP server | `app/mcp_server.py`, `app/mcp_service.py`, `app/skill_search_index.py` | TBD |
 
 ## Mechanics
 

@@ -41,7 +41,7 @@ A hard, deterministic **controlled web app** to measure the engine honestly.
 - **Deterministic checkers** (`app/checker.py`) read `/state` — `dispute_workflow`, `row_find_act`, `settings_change` — so "success" is never self-reported.
 - **Eval harness** (`app/eval_harness.py`) — skills-off ablation, UI-mutation variants, repair-eval.
 
-**The headline metric is unfakeable: CU calls N → 0, verified by ground truth** — a skill that didn't actually achieve its goal is refused, never cached. Generalization is honestly **uneven by family**: `settings_change` replays reliably at **0 CU, verified**; `row_find_act` (refund) generalizes, but crop drift on a held-out row can cost **one self-heal call (CU=1)** before it re-grounds; the modal-heavy `invoice_action` (dispute) workflows are the **hard frontier** — drift escalates and sometimes needs a full recompile. Cold-learning is a live Gemini run, so the exact per-task 0-CU count **varies between runs** (a representative run lands ~3/5 of the sampled tasks at 0 CU verified); the durable claim is not a fixed score but the **mechanism** — drift is paid once, then amortizes to 0, always behind a ground-truth gate. That mechanism is locked down by a hermetic test bank (`tests/`, **37 tests, no key or network**). Reproduce the live eval with:
+**The headline metric is unfakeable: CU calls N -> 0, verified by ground truth** — a skill that didn't actually achieve its goal is refused, never cached. Generalization is honestly **uneven by family**: `settings_change` replays reliably at **0 CU, verified**; `row_find_act` (refund) generalizes, but crop drift on a held-out row can cost **one self-heal call (CU=1)** before it re-grounds; the modal-heavy `invoice_action` (dispute) workflows are the **hard frontier** — drift escalates and sometimes needs a full recompile. Cold-learning is a live Gemini run, so the exact per-task 0-CU count **varies between runs** (a representative run lands ~3/5 of the sampled tasks at 0 CU verified); the durable claim is not a fixed score but the **mechanism** — drift is paid once, then amortizes to 0, always behind a ground-truth gate. That mechanism is locked down by the hermetic test bank in `tests/` (no key or network). Reproduce the live eval with:
 
 ```bash
 python -m app.controlled_app.server                 # arena on :8800
@@ -49,7 +49,7 @@ python -m app.fusion.test_skills --split all        # cold → compile → repla
 python -m unittest discover -s tests                # the deterministic mechanism proof (no key needed)
 ```
 
-**What's proven vs. the frontier.** The demo-safe spine is solid and reproducible: **browser fusion replay at 0 CU**, **settings generalization**, **self-heal that persists** (drift paid once, then free — `validate_persist` drives the live arena to **CU 0 → 1 → 0** across a save/reload-from-disk boundary), and **recall** of a warm skill by plain-language intent. The honest frontier, still model-bound today: arbitrary generalization across *all* 11 tasks (dispute modal drift), the learned web→native-app **hybrid** (Gemini action-safety blocks the cross-context paste — see below), and **live cold-launch of heavy desktop apps** like Word (UI-readiness timing). We ship those as architecture and say plainly where the model stops us.
+**What's proven vs. the frontier.** The demo-safe spine is solid and reproducible: **browser fusion replay at 0 CU**, **settings generalization**, **self-heal that persists** (drift paid once, then free — `validate_persist` drives the live arena to **CU 0 → 1 → 0** across a save/reload-from-disk boundary), **recall** of a warm skill by plain-language intent, and a **non-Acme real-web → TextEdit self-improvement demo** (`stale_web_to_textedit_note`) that fails, repairs, promotes, then replays with 0 model calls. The honest frontier, still model-bound today: arbitrary generalization across *all* 11 tasks (dispute modal drift), the fully learned web→native-app **hybrid** (Gemini action-safety blocks the cross-context paste — see below), and **live cold-launch of heavy desktop apps** like Word (UI-readiness timing). We ship those as architecture and say plainly where the model stops us.
 
 ---
 
@@ -66,7 +66,7 @@ python -m app.fusion.recall --backfill
 python -m app.fusion.recall "refund the paid Globex invoice"   # → fused_train-refund-globex (0.82)
 ```
 
-Cosine match runs in-process (no network at recall time beyond embedding the query — a cheap *text* call, not a computer-use call, so replay stays 0 CU). MongoDB Atlas (`database/api.py`) is an **optional** cross-agent share, never a runtime dependency.
+Cosine match runs in-process (no network at recall time beyond embedding the query — a cheap *text* call, not a computer-use call, so replay stays 0 CU). MongoDB Atlas (`database/api.py`) is optional for this fusion recall path; the voice/chat surfaces below can also use Atlas as a shared replayable skill catalog.
 
 ---
 
@@ -91,33 +91,35 @@ This drives the **real macOS desktop** via `pyautogui` and has produced real `.d
 python3 -m app.desktop_cu --max-turns 26 --trace traces/run.json \
   --intent "Create a Word document, type 'Hello', and save it to the Desktop as 'demo'."
 
-# 2) compile (the compiler): a Gemini pass → a keyboard-first macro
-python3 -m app.desktop_skill_compiler --trace traces/run.json --out database/skills/demo.macro.json
+# 2) compile (the compiler): a Gemini pass -> a keyboard-first macro
+python3 -m app.desktop_skill_compiler --trace traces/run.json --out traces/demo.macro.json
 
 # 3) replay (fast, 0 model calls), optionally with the notch HUD
-python3 -m app.desktop_cu --replay database/skills/demo.macro.json
-python3 -m app.desktop_hud --skill create_word_file
+python3 -m app.desktop_cu --replay traces/demo.macro.json
+python3 -m app.desktop_hud --replay traces/demo.macro.json
 ```
 
 ### Step-level self-improvement
 Versioned **macro v2** skills verify every state transition against macOS UI state and final file checks. A failed transition stops the replay; `--repair` asks Gemini for a bounded patch to *that step only*, replays the full candidate from a clean state, and promotes it only after the deterministic checker passes.
 
 ```bash
-python -m app.self_improve replay create_word_file                         # verified, model-free replay
-python -m app.self_improve demo stale_create_word_file --metrics traces/self_improvement.json
-python -m app.desktop_hud --skill stale_create_word_file --repair          # localize → repair → validate → promote
-python -m app.browser_self_improve replay acme_settings_email --headless   # the same engine, browser surface
+python -m app.self_improve demo stale_web_to_textedit_note --metrics traces/web_textedit_self_improvement.json
 ```
 
-Runtime skill versions live under `database/skills/registry/` (gitignored — these are runtime artifacts; the canonical seed skills `database/skills/*.macro.json` are tracked). `create_word_file` and `meeting_notes` share `ensure_blank_document` and `save_word_document`, so a promoted subskill repair transfers to both workflows.
+The old tracked `database/skills/*.macro.json` seed catalog was intentionally removed after the DB pivot because those examples were stale. Runtime repair versions still live under `database/skills/registry/` (gitignored), while repeatable demo fixtures live under `examples/demo_skills/`. Voice/chat use MongoDB replayable skill documents instead of the old local seed catalog.
 
-### 🎙️ Talk to it
+### Voice and chat surfaces
 A LiveKit voice agent runs learned desktop skills by voice and narrates live (Deepgram STT → Gemini 3.5 Flash → Cartesia TTS, via LiveKit Inference — no separate Google key on the replay path):
 
 ```bash
 pip install -r requirements-voice.txt
 python3 -m app.voice_agent console     # then say: "calculate 52 times 68 and save it in Word."
+python -m chat                         # Gemini function-calling TUI over the same replayable DB store
 ```
+
+There are two Atlas modes today:
+- **MCP descriptor index**: `app.skill_search_index` writes small `doc_type=executable_skill` descriptors, then `app.mcp_service` resolves the executable macro from the local versioned registry before replay. After the DB pivot there is no tracked local seed catalog, so this lane is empty until runtime/demo skills are promoted into the local registry.
+- **Voice/chat skill store**: `app.skill_store` writes flattened `doc_type=skill` macro documents so the voice agent and chat TUI can replay without local subskill lookups. Search filters out stale or unchecker-backed documents before execution.
 
 ### Reliability features
 - **Dynamic waits** (`ensure_app` / `settle`) — polls macOS for app-readiness and watches the screen until it settles, instead of a fixed `sleep` (an already-open app continues in ~0.3s).
@@ -151,7 +153,11 @@ python3 -m app.voice_agent console     # then say: "calculate 52 times 68 and sa
 | `app/verified_replay.py` · `app/verification.py` | condition-checked macro replay + DSL |
 | `app/local_skill_registry.py` · `app/skill_repair.py` | versioned promotion + localized repair |
 | `app/notch.py` · `app/desktop_hud.py` · `app/voice_agent.py` | notch HUD · HUD runner · voice agent |
-| `database/api.py` + `data/` | **optional** vector store (Atlas) for cross-agent skill sharing — *seed/mock data; recall is local-first and does not depend on it* |
+| `database/api.py` | Atlas vector/search gateway shared by descriptor indexing and replayable DB skills |
+| `app/skill_store.py` · `chat/` | voice/chat replayable Mongo skill store and Gemini function-calling TUI |
+
+## Implementation status
+
 | File | Status | Responsibility |
 |---|---|---|
 | `app/schemas.py` | ✅ | frozen contracts: `Task`, `Step`, `Trajectory`, `Skill` |
@@ -169,16 +175,18 @@ python3 -m app.voice_agent console     # then say: "calculate 52 times 68 and sa
 | `app/desktop_speed.py` | ✅ | cold-CU vs compiled-replay speed proof (+ self-heal fallback) |
 | `app/desktop_eval.py` | ✅ | skills-off ablation (cold vs skill-injected) |
 | `app/hud.py` | ⚠️ | early Tkinter HUD — superseded by `notch.py` (Tk can't render at the notch) |
-| `database/skills/*.macro.json` | ✅ | Gemini-authored, replayable skills |
-| `database/api.py` + `data/` | ✅ | local Skill lookup plus MongoDB Atlas semantic vector search |
+| `examples/demo_skills/*.macro.json` | ✅ | Explicit demo fixtures for self-improvement drills |
+| `database/skills/registry/` | ⚠️ | gitignored runtime repair/promote store; empty until a local run promotes a skill |
+| `database/api.py` | ✅ | MongoDB Atlas semantic vector search plus deterministic upsert/list helpers |
+| `app/skill_store.py` · `chat/` | ✅ | flattened replayable DB skills for the voice agent and chat TUI |
 | **Browser track (original concept)** | | |
 | `app/cu_runner.py` | ✅ | Gemini CU loop on a Playwright browser → `Trajectory` |
 | `app/executor.py` | ✅ | Playwright action executor (full 3.5 browser action space) |
 | `app/runner.py` | ✅ | browser entry point / smoke test |
 | `app/trace.py` | ✅ | trajectory recorder |
 | **Not built yet** | | |
-| Atlas registry sync, desktop eval fleet | ⛔ todo | Atlas search descriptors are supported; remote executable registry remains |
-| `app/mcp_server.py` | ✅ | FastMCP stdio server for desktop skill search, inspection, and verified replay |
+| Automatic learned-skill Atlas seeding, desktop eval fleet | ⛔ todo | Newly learned fresh/hybrid artifacts do not auto-seed Atlas yet |
+| `app/mcp_server.py` | ⚠️ | FastMCP stdio server exists, but its local-registry catalog is empty after the DB pivot unless runtime skills are promoted locally |
 
 ---
 
@@ -205,14 +213,21 @@ python -m app.runner --url https://www.google.com --intent "Search for 'Gemini A
 ### FastMCP server
 
 The MCP server uses MongoDB Atlas for semantic discovery and the local versioned registry as the
-source of executable macros. Index active desktop skills explicitly, then configure an MCP client
-to launch the stdio server:
+source of executable macros. This is intentionally separate from the voice/chat replayable DB skill
+store. After the DB pivot there is no tracked local seed catalog, so the dry-run may return `[]`
+until a runtime/demo skill has been promoted locally:
 
 ```bash
 python -m app.skill_search_index --dry-run   # inspect descriptors without writing Atlas
 python -m app.skill_search_index             # embed and upsert descriptors in Atlas
 python -m app.mcp_server                     # stdio server (normally launched by the MCP client)
 ```
+
+For MCP, Atlas is a search index, not the executable source of truth: `app.skill_search_index`
+publishes descriptors for active local desktop macros, and MCP resolves the exact executable version
+from the local registry before replay. Voice/chat use a separate `doc_type=skill` lane that stores
+flattened, checker-backed macro documents for DB-only replay. Newly learned fresh/hybrid artifacts
+are saved locally today; automatic Atlas seeding for those artifacts is still a TODO.
 
 Example client configuration (use absolute paths on your machine):
 

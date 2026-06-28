@@ -13,7 +13,15 @@ from app.verified_replay import check_final, replay_verified
 
 class FakeBackend:
     def __init__(self, create_document=True):
-        self.state = {"foreground_app": "", "windows": "", "ui_text": "", "word_document_count": 0}
+        self.state = {
+            "foreground_app": "",
+            "windows": "",
+            "ui_text": "",
+            "word_document_count": 0,
+            "textedit_document_count": 0,
+            "textedit_text": "",
+            "clipboard": "",
+        }
         self.executed = []
         self.create_document = create_document
 
@@ -26,7 +34,13 @@ class FakeBackend:
             self.state["foreground_app"] = step["app"]
             self.state["windows"] = step["app"]
         elif step["op"] == "hotkey" and step.get("keys") == ["command", "n"] and self.create_document:
-            self.state["word_document_count"] = 1
+            if self.state.get("foreground_app") == "TextEdit":
+                self.state["textedit_document_count"] = 1
+            else:
+                self.state["word_document_count"] = 1
+        elif step["op"] == "hotkey" and step.get("keys") == ["command", "v"]:
+            if self.state.get("foreground_app") == "TextEdit" and self.state.get("textedit_document_count", 0) > 0:
+                self.state["textedit_text"] += self.state.get("clipboard", "")
         return {}
 
     def screenshot_png(self):
@@ -60,6 +74,34 @@ class BrokenClient:
     models = BrokenModels()
 
 
+class TextEditModels:
+    class Response:
+        text = json.dumps({
+            "replacement_steps": [
+                {
+                    "op": "hotkey",
+                    "keys": ["command", "n"],
+                    "postcondition": {"textedit_document": True},
+                    "why": "Create the missing TextEdit note",
+                },
+                {
+                    "op": "hotkey",
+                    "keys": ["command", "v"],
+                    "precondition": {"textedit_document": True, "clipboard_contains": "{{heading}}"},
+                    "postcondition": {"textedit_contains": "{{heading}}"},
+                    "why": "Paste the verified web heading",
+                },
+            ]
+        })
+
+    def generate_content(self, **kwargs):
+        return self.Response()
+
+
+class TextEditClient:
+    models = TextEditModels()
+
+
 def base_skill(name="demo"):
     return {
         "schema_version": 2, "name": name, "app": "Microsoft Word", "os": "macos",
@@ -70,6 +112,29 @@ def base_skill(name="demo"):
             "precondition": {}, "postcondition": {"word_document": True},
             "timeout": 0, "retry_limit": 0, "fallback": [], "why": "Verify document",
         }],
+    }
+
+
+def textedit_heading_skill(name="stale_web_to_textedit_note"):
+    return {
+        "schema_version": 2, "surface": "desktop", "name": name,
+        "app": "Browser + TextEdit", "os": "macos", "version": 1,
+        "parent_version": None, "status": "active",
+        "params": {"heading": "Example Domains"}, "checker": {
+            "type": "condition", "condition": {"textedit_contains": "{{heading}}"},
+        }, "stats": {}, "steps": [
+            {
+                "id": "focus_textedit", "op": "open_app", "app": "TextEdit",
+                "precondition": {}, "postcondition": {"foreground_app": "TextEdit"},
+                "timeout": 0, "retry_limit": 0, "fallback": [], "why": "Focus TextEdit",
+            },
+            {
+                "id": "paste_web_heading", "op": "hotkey", "keys": ["command", "v"],
+                "precondition": {"foreground_app": "TextEdit", "clipboard_contains": "{{heading}}"},
+                "postcondition": {"textedit_contains": "{{heading}}"},
+                "timeout": 0, "retry_limit": 0, "fallback": [], "why": "Paste web heading",
+            },
+        ],
     }
 
 
@@ -129,6 +194,37 @@ class MacroTests(unittest.TestCase):
                 {},
             )
             self.assertFalse(failed)
+
+    def test_textedit_condition_checks_front_document_text(self):
+        passed, failures = check_final(
+            {"type": "condition", "condition": {"textedit_contains": "Example Domains"}},
+            {},
+            {"textedit_document_count": 1, "textedit_text": "Example Domains\n"},
+        )
+        self.assertTrue(passed, failures)
+        failed, failures = check_final(
+            {"type": "condition", "condition": {"textedit_document": True}},
+            {},
+            {"textedit_document_count": 0, "textedit_text": ""},
+        )
+        self.assertFalse(failed)
+        self.assertIn("TextEdit has no open document", failures)
+
+    def test_optimistic_replay_condition_checker_reads_final_state(self):
+        skill = textedit_heading_skill()
+        skill["steps"].insert(1, {
+            "id": "new_textedit_document", "op": "hotkey", "keys": ["command", "n"],
+            "precondition": {"foreground_app": "TextEdit"},
+            "postcondition": {"textedit_document": True},
+            "timeout": 0, "retry_limit": 0, "fallback": [], "why": "Create TextEdit document",
+        })
+        backend = FakeBackend(create_document=True)
+        backend.state["clipboard"] = "Example Domains"
+        result = replay_verified(
+            skill, backend=backend, registry=LocalSkillRegistry(tempfile.mkdtemp()), optimistic=True,
+        )
+        self.assertTrue(result["success"], result["checker_failures"])
+        self.assertEqual(result["mode"], "optimistic")
 
 
 class RegistryAndRepairTests(unittest.TestCase):
@@ -222,6 +318,34 @@ class RegistryAndRepairTests(unittest.TestCase):
             transferred = replay_verified(second_parent, backend=backend, registry=registry)
             self.assertTrue(transferred["success"])
             self.assertEqual(transferred["model_calls"], 0)
+
+    def test_textedit_web_heading_repair_promotes_stale_step(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            registry = LocalSkillRegistry(root)
+            skill = textedit_heading_skill()
+            (root / f"{skill['name']}.macro.json").write_text(json.dumps(skill), encoding="utf-8")
+            backend = FakeBackend(create_document=True)
+            backend.state["clipboard"] = "Example Domains"
+
+            def reset(_params):
+                backend.state["foreground_app"] = ""
+                backend.state["windows"] = ""
+                backend.state["textedit_document_count"] = 0
+                backend.state["textedit_text"] = ""
+                backend.state["clipboard"] = "Example Domains"
+
+            first = replay_verified(skill, backend=backend, registry=registry)
+            self.assertFalse(first["success"])
+            self.assertEqual(first["failed_step_id"], "paste_web_heading")
+            service = RepairService(registry=registry, reset=reset, client=TextEditClient())
+            repaired = service.repair_and_validate(skill, skill["params"], first, backend=backend)
+            self.assertTrue(repaired["success"])
+            self.assertTrue(repaired["promoted"])
+            reset({})
+            after = replay_verified(registry.load_skill(skill["name"]), skill["params"], backend=backend, registry=registry)
+            self.assertTrue(after["success"])
+            self.assertEqual(after["model_calls"], 0)
 
 
 if __name__ == "__main__":

@@ -44,10 +44,11 @@ class Skill:
     name: str                       # "dispute_unpaid_invoice"
     site: str
     goal_template: str              # "Mark the {status} invoice from {customer} as {action}, add note, export"
-    variables: dict                 # {"customer": {"type": "string", "required": True}, ...}
+    variables: dict                 # agent metadata: {"customer": {"type": "string", "required": True}, ...}
     preconditions: dict             # {"url_pattern": "/billing", "landmarks": ["invoice table"]}
     steps: list[dict]               # [{"intent":.., "action":.., "target_desc":"Invoices nav item", "param_ref":"customer"}]
     success_checks: list[str]       # human-readable; the REAL check is Task.checker
+    params: dict = field(default_factory=dict)   # replay defaults the engine binds: {"customer": "Acme Corp", ...}
     embedding: list[float] = field(default_factory=list)
     stats: dict = field(default_factory=lambda: {
         "uses": 0, "successes": 0, "failures": 0, "success_rate": 0.0, "avg_steps": 0.0})

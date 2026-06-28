@@ -27,6 +27,7 @@ SCHEMA = """You output ONLY a JSON object with this exact shape:
   "parent_version": null,
   "status": "active",
   "note": "<one line on what this macro does>",
+  "params": { "<param_name>": "<default value used in this recording>", ... },
   "variables": {
     "<param_name>": { "type": "string|number|integer|boolean", "required": true|false }
   },
@@ -76,7 +77,10 @@ NO screenshots and NO model calls. Rules:
   {{location}}, or another descriptive name. Never repeat those literals in steps.
   For each extracted variable, populate the top-level "variables" object with its name as key,
   a "type" (string / number / integer / boolean), and "required": true if the task cannot
-  proceed without it, false if it is optional.
+  proceed without it, false if it is optional. ALSO populate the top-level "params" object mapping
+  each variable name to the actual literal value used in this recording (e.g.
+  {"filename": "demo", "location": "Desktop"}). "params" supplies the replay engine's default
+  values for {{placeholders}}; "variables" describes their types. Emit BOTH for every variable.
 - Give every step a stable semantic id that will remain meaningful when nearby steps change.
 - Add deterministic preconditions and postconditions where macOS can inspect them. Supported
   conditions are foreground_app, app_window, word_document, ui_text, dialog, and file_exists.

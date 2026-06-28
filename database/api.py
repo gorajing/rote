@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""Local Skill lookup and MongoDB Atlas vector search APIs.
+"""Legacy local Skill metadata lookup and MongoDB Atlas vector search APIs.
 
-The local ``query`` API remains available for deterministic, offline Skill
-lookup. ``push`` and ``retrieve`` provide semantic storage and search using
-Gemini embeddings stored in MongoDB Atlas.
+The local ``query`` API remains available for exact legacy metadata lookup, but
+the old ``database/data/*.json`` skill payloads are no longer shipped after the
+DB-backed runtime pivot. ``push`` and ``retrieve`` provide semantic storage and
+search using Gemini embeddings stored in MongoDB Atlas.
 
 Python examples::
 
-    query(platform="web", address="amazon", load_skill=True)
+    query(platform="web", address="amazon")
     push({"title": "Amazon", "description": "Buy headphones"})
     retrieve("how to buy headphones", top_k=3)
 
 CLI examples::
 
-    python database/api.py local web --address amazon --skill
+    python database/api.py local web --address amazon
     python database/api.py push '{"description": "buy headphones"}'
     python database/api.py retrieve "how to buy headphones" --top-k 3
 """
@@ -55,7 +56,13 @@ def _load_index() -> list[dict]:
 
 
 def _entry_to_skill(entry: dict) -> Skill:
-    data = json.loads((_DATA_DIR / entry["filename"]).read_text(encoding="utf-8"))
+    path = _DATA_DIR / entry["filename"]
+    if not path.exists():
+        raise RuntimeError(
+            "legacy local skill payloads are not shipped after the DB runtime pivot; "
+            "query without load_skill or use Atlas-backed skill search"
+        )
+    data = json.loads(path.read_text(encoding="utf-8"))
     return Skill(**data)
 
 
@@ -123,8 +130,13 @@ def push(doc: dict) -> str:
     if not isinstance(description, str) or not description.strip():
         raise ValueError("Document must include a non-empty 'description' field")
 
-    doc = {k: v for k, v in doc.items() if k != "_id"}
+    doc = dict(doc)
+    document_id = doc.pop("_id", None)
     document = {**doc, _VECTOR_PATH: _embed(description)}
+    if document_id is not None:
+        document["_id"] = document_id
+        _collection().replace_one({"_id": document_id}, document, upsert=True)
+        return str(document_id)
     return str(_collection().insert_one(document).inserted_id)
 
 
@@ -158,6 +170,13 @@ def retrieve(search_text: str, top_k: int = 5, filters: Optional[dict] = None) -
         {"$project": {_VECTOR_PATH: 0}},
     ]
     return list(_collection().aggregate(pipeline))
+
+
+def list_all(limit: int = 200) -> list[dict]:
+    """Return stored documents (without their embedding vectors) for cataloging."""
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    return list(_collection().find({}, {_VECTOR_PATH: 0}).limit(limit))
 
 
 def _print_local_results(results: list[dict | Skill]) -> None:

@@ -8,6 +8,8 @@ import os
 import re
 import subprocess
 import time
+import urllib.request
+from html.parser import HTMLParser
 from pathlib import Path
 
 from google import genai
@@ -170,6 +172,69 @@ def reset_stale_word(params: dict) -> None:
         check=False, capture_output=True,
     )
     time.sleep(1)
+
+
+class _FirstHeadingParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self._in_h1 = False
+        self._parts: list[str] = []
+        self.heading = ""
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() == "h1" and not self.heading:
+            self._in_h1 = True
+            self._parts = []
+
+    def handle_data(self, data):
+        if self._in_h1:
+            self._parts.append(data)
+
+    def handle_endtag(self, tag):
+        if tag.lower() == "h1" and self._in_h1:
+            self.heading = " ".join("".join(self._parts).split())
+            self._in_h1 = False
+
+
+def _fetch_heading(url: str) -> str:
+    try:
+        with urllib.request.urlopen(url, timeout=8) as response:
+            html = response.read(500_000).decode("utf-8", "ignore")
+    except Exception:
+        return ""
+    parser = _FirstHeadingParser()
+    parser.feed(html)
+    if parser.heading:
+        return parser.heading
+    title = re.search(r"<title[^>]*>(.*?)</title>", html, flags=re.IGNORECASE | re.DOTALL)
+    return " ".join(title.group(1).split()) if title else ""
+
+
+def _set_clipboard(text: str) -> None:
+    subprocess.run(["pbcopy"], input=text, text=True, check=False, timeout=5)
+
+
+def reset_stale_textedit_note(params: dict) -> None:
+    """Create the non-Acme drift state: a real page is visible, its heading is on the pasteboard,
+    and TextEdit is frontmost with zero open documents. The stale skill assumes a note already
+    exists, so paste fails until repair inserts the missing new-document transition."""
+    url = params.get("source_url", "https://www.iana.org/help/example-domains")
+    heading = _fetch_heading(url) or params.get("heading", "Example Domains")
+    params["heading"] = heading
+    subprocess.run(["open", url], check=False, capture_output=True)
+    _set_clipboard(heading)
+    subprocess.run(["osascript", "-e", 'tell application "TextEdit" to quit saving no'],
+                   check=False, capture_output=True)
+    time.sleep(1)
+    subprocess.run(["open", "-a", "TextEdit"], check=False, capture_output=True)
+    time.sleep(1)
+    subprocess.run(
+        ["osascript",
+         "-e", 'tell application "TextEdit" to close every document saving no',
+         "-e", 'tell application "TextEdit" to activate'],
+        check=False, capture_output=True,
+    )
+    time.sleep(0.5)
 
 
 class RepairService:

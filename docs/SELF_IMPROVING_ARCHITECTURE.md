@@ -3,6 +3,8 @@
 > **Audience:** AI agents and developers working on the self-improving replay/repair engine, now **merged to `main`** (originally landed on `feat/self-improving`).  
 > **Goal:** Explain how Rote turns a successful Gemini Computer Use run into a reusable, model-free skill — and how it repairs that skill when the UI drifts.
 
+> **Current repo status after the DB pivot:** the old tracked `database/skills/*.macro.json` seed catalog was intentionally deleted because those examples were stale. The local registry still exists for runtime repair/promotion state and explicit demo fixtures, but the voice/chat runtime now uses MongoDB `doc_type=skill` documents via `app.skill_store`. Later sections that name `create_word_file`, `meeting_notes`, or `stale_create_word_file` describe the historical local-registry mechanics; those exact fixtures are no longer tracked unless a developer recreates or promotes them locally. The repeatable tracked demo fixture is currently `examples/demo_skills/stale_web_to_textedit_note.macro.json`.
+
 ---
 
 ## 1. One-sentence summary
@@ -49,8 +51,8 @@ Rote supports two execution surfaces through a **shared replay/repair engine**:
 
 | Surface     | Backend                                                | Input targeting                                                         | Example skills                                       |
 | ----------- | ------------------------------------------------------ | ----------------------------------------------------------------------- | ---------------------------------------------------- |
-| **desktop** | `MacOSDesktopBackend` in `app/verified_replay.py`      | Keyboard shortcuts, app names (`pyautogui` + AppleScript)               | `create_word_file`, `meeting_notes`, `calc_to_word`  |
-| **browser** | `PlaywrightBrowserBackend` in `app/browser_backend.py` | Semantic Playwright locators (`role`, `label`, `text`, `testid`, `css`) | `acme_settings_email`, `youtube_hackathon_top_video` |
+| **desktop** | `MacOSDesktopBackend` in `app/verified_replay.py`      | Keyboard shortcuts, app names (`pyautogui` + AppleScript)               | Runtime/demo macros, plus DB-backed voice/chat skills |
+| **browser** | `PlaywrightBrowserBackend` in `app/browser_backend.py` | Semantic Playwright locators (`role`, `label`, `text`, `testid`, `css`) | Browser repair fixtures and fusion arena traces       |
 
 Both surfaces use the same:
 
@@ -78,7 +80,7 @@ Both surfaces use the same:
 | `app/browser_backend.py`              | Playwright execution + page state inspection.                                                                                       |
 | `app/browser_self_improve.py`         | CLI for browser replay / repair.                                                                                                    |
 | `app/notch.py` + `app/desktop_hud.py` | macOS Dynamic Island-style HUD for live replay narration.                                                                           |
-| `database/skills/*.macro.json`        | Source-of-truth skill definitions (v1 or v2). Runtime versions live in `registry/`.                                                 |
+| `examples/demo_skills/*.macro.json`   | Explicit demo fixtures used by `app.self_improve demo`. Runtime versions live in `database/skills/registry/`.                      |
 
 ---
 
@@ -92,7 +94,7 @@ Every skill is a JSON file (`*.macro.json`) with `schema_version: 2`.
 {
   "schema_version": 2,
   "surface": "desktop",
-  "name": "create_word_file",
+  "name": "example_word_doc",
   "app": "Microsoft Word",
   "os": "macos",
   "version": 1,
@@ -330,19 +332,23 @@ Repair runs only when:
 
 ### Subskill repair propagation
 
-If `ensure_blank_document` is repaired and promoted, any workflow that `call`s it — e.g. `create_word_file`, `meeting_notes` — automatically picks up the new version on the next `registry.load_skill("ensure_blank_document")`. This is how localized repair transfers across shared workflows without recompiling the root skill.
+The local registry still supports subskill propagation: if a promoted runtime skill contains `call`
+steps, a repair to the child skill is picked up the next time the parent expands through
+`registry.load_skill()`. The historical `ensure_blank_document` / `create_word_file` examples used
+that mechanism, but those tracked seed files were intentionally removed after the DB pivot.
 
 ### Registry layout
 
 ```
 database/skills/
-  create_word_file.macro.json          ← source definition (committed)
-  ensure_blank_document.macro.json
   registry/                            ← runtime versions (gitignored)
     index.json                         ← { skills: { name: { active_version, history } } }
-    ensure_blank_document/
-      v1.json                          ← original
+    <skill_name>/
+      v1.json                          ← original/preserved runtime version
       v2.json                          ← promoted repair candidate
+
+examples/demo_skills/
+  stale_web_to_textedit_note.macro.json ← tracked repeatable demo fixture
 ```
 
 Operations: `load_skill`, `create_candidate`, `promote`, `reject`, `record_run`, `get_history`.
@@ -351,18 +357,20 @@ Operations: `load_skill`, `create_candidate`, `promote`, `reject`, `record_run`,
 
 ## 9. Self-improvement demo (stale skill fixture)
 
-The branch includes **deterministic stale fixtures** for live demos:
+The project includes one tracked **deterministic stale fixture** for the non-Acme live demo:
 
 | Skill                           | Purpose                                                             |
 | ------------------------------- | ------------------------------------------------------------------- |
-| `stale_ensure_blank_document`   | Subskill that omits `Cmd+N` — Word opens but no document is created |
-| `stale_create_word_file`        | Root workflow that calls the stale subskill                         |
-| `stale_youtube_hackathon_video` | Browser-side stale fixture                                          |
+| `stale_web_to_textedit_note`    | Non-Acme demo: real webpage heading → TextEdit, stale paste assumes an existing note |
 
-`reset_stale_word()` creates the drift state: Word is frontmost with **zero open documents**. Replay fails at the subskill's postcondition (`word_document: true`). Repair generates a replacement step (typically `Cmd+N`), validates end-to-end, and promotes.
+The older Word and YouTube stale fixtures are no longer tracked in the repo. They remain useful
+historical examples of the repair mechanism, but should not be advertised as current demo commands
+unless recreated locally.
+
+`reset_stale_textedit_note()` opens a real public webpage, extracts its heading into the macOS clipboard, and leaves TextEdit frontmost with **zero open documents**. Replay fails when the stale skill tries to paste into a note that does not exist. Repair adds the missing TextEdit document creation, validates that the front document contains the live web heading, promotes the fixed skill, and the next replay runs with zero model calls.
 
 ```bash
-python -m app.self_improve demo stale_create_word_file --metrics traces/self_improvement.json
+python -m app.self_improve demo stale_web_to_textedit_note --metrics traces/web_textedit_self_improvement.json
 ```
 
 This runs: reset → replay (expect fail) → repair → reset → replay (expect pass) → JSON report.
@@ -374,21 +382,20 @@ This runs: reset → replay (expect fail) → repair → reset → replay (expec
 ### Desktop
 
 ```bash
-# Verified model-free replay
-python -m app.self_improve replay create_word_file
+# Verified model-free replay of a locally promoted runtime skill
+python -m app.self_improve replay <runtime_skill_name>
 
 # Replay with optional localized repair on failure
-python -m app.self_improve repair create_word_file
+python -m app.self_improve repair <runtime_skill_name>
 
 # Full self-improvement demo (stale → repair → promote → verify)
-python -m app.self_improve demo stale_create_word_file
+python -m app.self_improve demo stale_web_to_textedit_note
 
 # Inspect version history
-python -m app.self_improve history ensure_blank_document
+python -m app.self_improve history <runtime_skill_name>
 
 # Replay with notch HUD
-python -m app.desktop_hud --skill create_word_file
-python -m app.desktop_hud --skill stale_create_word_file --repair
+python -m app.desktop_hud --replay traces/demo.macro.json
 ```
 
 ### Browser
@@ -419,7 +426,10 @@ python -m app.desktop_cu \
 
 ---
 
-## 11. Example skill graph (Word workflows)
+## 11. Historical example skill graph (Word workflows)
+
+This graph shows how local-registry subskill propagation works. These exact Word fixture files are
+not tracked after the DB pivot unless a developer recreates/promotes them locally.
 
 ```
 create_word_file
@@ -438,7 +448,8 @@ meeting_notes
 └── call → save_word_document      ← shared subskill
 ```
 
-Repairing `ensure_blank_document` v1 → v2 benefits both `create_word_file` and `meeting_notes` without touching their root macros.
+In that historical setup, repairing `ensure_blank_document` v1 → v2 benefited both
+`create_word_file` and `meeting_notes` without touching their root macros.
 
 ---
 
@@ -448,11 +459,14 @@ Repairing `ensure_blank_document` v1 → v2 benefits both `create_word_file` and
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tests/test_self_improving.py` | v1 migration, parameter resolution, verified replay with fake backend, repair patch cleaning, candidate promotion/rejection, subskill propagation |
 | `tests/test_cross_surface.py`  | Browser semantic target validation, shared replay engine on browser skills, condition composition, HTTP/file checkers                             |
+| `tests/test_fusion_store.py`   | Fusion skill persistence, active-version promotion, superseding, and isolation from the macro registry                                            |
+| `tests/test_self_heal_persist.py` | Fusion self-heal persistence, transient-miss retry, ambiguous-crop rejection, and disk round-trip behavior                                     |
+| `tests/test_mcp_service.py`    | MCP service search/replay contracts, Atlas descriptor projection, DB vector pipeline filters, and deterministic upsert behavior                   |
 
 Run:
 
 ```bash
-python -m unittest tests.test_self_improving tests.test_cross_surface
+python -m unittest discover -s tests -p 'test*.py' -v
 ```
 
 Tests use `FakeBackend` / `BrowserStateBackend` — no real OS or browser required.
@@ -470,7 +484,7 @@ Tests use `FakeBackend` / `BrowserStateBackend` — no real OS or browser requir
 
 ---
 
-## 14. Measured performance (desktop, this branch)
+## 14. Measured performance (desktop, shipped macro track)
 
 | Task                    | Doer (Gemini CU)   | Verified replay    | Speedup |
 | ----------------------- | ------------------ | ------------------ | ------- |
@@ -486,11 +500,11 @@ The headline demo metric: **CU model calls: N → 0** on verified replay.
 
 These are planned (see `docs/PLAN.md`) but **not** part of the current branch:
 
-- MongoDB Atlas remote registry sync
+- Automatic Atlas seeding for newly learned fresh/hybrid artifacts
+- Remote executable registry in Atlas
 - Desktop eval fleet
-- MCP server for cross-agent skill sharing
 
-The local versioned registry and localized repair lifecycle are fully implemented locally.
+The local versioned registry, localized repair lifecycle, manual Atlas descriptor sync, and FastMCP skill search/inspection/replay server are implemented. Atlas is still a discovery index; executable replay resolves against the local registry.
 
 The **hard arena (AcmeBilling structural mutation) IS implemented** — it is no longer a planned item. `app/controlled_app/state.py` defines `VARIANTS = ("baseline", "move_dispute_to_cases", "relabel_export")`, and the server exposes `POST /reset?variant=move_dispute_to_cases` (`app/controlled_app/server.py`) to apply the structural mutation that relocates the dispute action under Cases.
 
@@ -522,20 +536,11 @@ When asked to **extend to a new surface:**
 
 ---
 
-## 17. File index (skills shipped on this branch)
+## 17. File index (tracked demo skills)
 
 | File                                       | Surface | Description                        |
 | ------------------------------------------ | ------- | ---------------------------------- |
-| `ensure_blank_document.macro.json`         | desktop | Shared subskill: open Word + Cmd+N |
-| `save_word_document.macro.json`            | desktop | Shared subskill: Cmd+S save flow   |
-| `create_word_file.macro.json`              | desktop | Compose ensure + type + save       |
-| `meeting_notes.macro.json`                 | desktop | Formatted document workflow        |
-| `calc_to_word.macro.json`                  | desktop | Calculator → clipboard → Word      |
-| `stale_ensure_blank_document.macro.json`   | desktop | Stale subskill (no Cmd+N) for demo |
-| `stale_create_word_file.macro.json`        | desktop | Root stale demo workflow           |
-| `acme_settings_email.macro.json`           | browser | Settings form + HTTP checker       |
-| `youtube_hackathon_top_video.macro.json`   | browser | YouTube search workflow            |
-| `stale_youtube_hackathon_video.macro.json` | browser | Stale browser demo fixture         |
+| `examples/demo_skills/stale_web_to_textedit_note.macro.json` | desktop | Real-web heading → TextEdit stale demo |
 
 ---
 
@@ -558,20 +563,17 @@ These layers work for **any skill that conforms to macro schema v2** on a suppor
 
 If a v2 macro exists with valid pre/postconditions and an external checker, `replay` and `repair` run without task-specific code paths.
 
-### What is currently limited (shipped skills & demos)
+### What is currently limited (tracked demos)
 
-Only a **small set of tasks** has macros, checkers, and (where needed) reset hooks wired up end-to-end:
+Only a **small set of tasks** has macros, checkers, and (where needed) reset hooks wired up end-to-end. After the DB pivot, the tracked local demo fixture is intentionally narrow:
 
 **Desktop (macOS):**
 
-- Word workflows: `create_word_file`, `meeting_notes`
-- Multi-app: `calculator_to_word_save` (Calculator → clipboard → Word)
-- Shared subskills: `ensure_blank_document`, `save_word_document`
-- Stale demo fixtures: `stale_*`
+- `examples/demo_skills/stale_web_to_textedit_note.macro.json`
 
 **Browser:**
 
-- `acme_settings_email` (HTTP checker + HTTP reset)
+- Browser/fusion arena demos remain code-backed, but the old browser macro seed fixtures are no longer tracked in `database/skills`.
 - `youtube_hackathon_top_video`
 - Stale demo fixture: `stale_youtube_hackathon_video`
 

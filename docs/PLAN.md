@@ -40,9 +40,9 @@ python -m app.controlled_app.server          # arena on :8800
 - The structural mutation is **`move_dispute_to_cases`**: the "Mark Disputed" action is relocated to a separate **Cases** page (`/cases/dispute/<id>`) — the self-heal stress test. The **reason dropdown is baseline** (present in every variant) — it is *not* a mutation.
 - Split: **6 train / 5 held-out**, three families.
 
-## Not built / mock (do NOT claim as working integrations)
-- **Atlas registry** (`database/api.py` + `data/`) — **mock/seed entries only**, an *optional* cross-agent skill share. Recall is **local-first** and does not depend on it. (The runtime `database/skills/registry/` is **gitignored by design**; the canonical seed skills `database/skills/*.macro.json` are tracked.)
-- **MCP / MiniMax** closing-vision beat — not built.
+## Not built / partial integrations (do NOT over-claim)
+- **Atlas registry** (`database/api.py`) — two lanes. MCP uses Atlas as a descriptor index (`doc_type=executable_skill`) and resolves executable macros from the local versioned registry, but the old tracked local seed catalog was intentionally deleted after the DB pivot, so this lane is empty until runtime/demo skills are promoted locally. Voice/chat use flattened, checker-backed replayable skill docs (`doc_type=skill`) through `app.skill_store`. Newly learned fresh/hybrid artifacts do **not** auto-seed Atlas yet. Fusion recall is **local-first** and does not depend on Atlas.
+- **MCP / MiniMax closing beat** — FastMCP skill search/inspection/replay is built in `app/mcp_server.py`; the MiniMax closing-vision beat is not built.
 - **`eval_harness.py` compile / store / repair paths** are **stubs** (`_compile_successes`, the `repair_library` branch) — guarded imports that no-op when the module isn't present.
 
 ## History — the original v2 plan (superseded)

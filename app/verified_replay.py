@@ -66,6 +66,14 @@ class MacOSDesktopBackend:
             'if application "Microsoft Word" is running then tell application "Microsoft Word" '
             'to return count of documents'
         )
+        textedit_docs = self._osa(
+            'if application "TextEdit" is running then tell application "TextEdit" '
+            'to return count of documents'
+        )
+        textedit_text = self._osa(
+            'if application "TextEdit" is running then tell application "TextEdit" '
+            'to if (count of documents) > 0 then return text of front document'
+        )
         running = self._osa('tell application "System Events" to get name of every application process')
         clipboard = self._osa('the clipboard as text')
         return {
@@ -73,6 +81,8 @@ class MacOSDesktopBackend:
             "windows": windows,
             "ui_text": ui_text,
             "word_document_count": int(word_docs) if word_docs.isdigit() else 0,
+            "textedit_document_count": int(textedit_docs) if textedit_docs.isdigit() else 0,
+            "textedit_text": textedit_text,
             "running_apps": [item.strip() for item in running.split(",") if item.strip()],
             "clipboard": clipboard,
         }
@@ -130,6 +140,18 @@ def _expand_steps(skill: dict, params: dict, registry: LocalSkillRegistry) -> li
     return expanded
 
 
+def _checker_needs_state(checker: dict | None) -> bool:
+    checker = checker or {}
+    if not checker:
+        return False
+    kind = checker.get("type", "condition")
+    if kind == "condition":
+        return bool(checker.get("condition"))
+    if kind in {"all", "any"}:
+        return any(_checker_needs_state(child) for child in checker.get("checks", []))
+    return False
+
+
 def replay_verified(
     skill: dict,
     params: dict | None = None,
@@ -168,8 +190,9 @@ def replay_verified(
             if on_event:
                 on_event("step", {"index": index, "total": len(steps), "step": step})
             backend.execute(step)                          # dynamic waits inside; no inspection
-        # file/HTTP checkers don't need desktop state -> skip the expensive final inspect() scan
-        passed, failures = check_final(skill.get("checker"), params)
+        # File/HTTP checkers do not need desktop state. Stateful condition checkers do.
+        state = backend.inspect() if _checker_needs_state(skill.get("checker")) else None
+        passed, failures = check_final(skill.get("checker"), params, state)
         if passed or not (allow_repair and repair_service is not None):
             return {
                 "success": passed, "checker_passed": passed,
@@ -179,6 +202,7 @@ def replay_verified(
                 "retries": 0, "fallbacks": 0, "model_calls": 0, "repair_calls": 0,
                 "skill_name": skill["name"], "skill_version": skill.get("version", 1),
                 "used_skill": True, "mode": "optimistic",
+                "filename": params.get("filename"), "location": params.get("location", "Desktop"),
             }
         if on_event:                                       # failed + repair requested -> diagnose below
             on_event("diagnosing", {"checker_failures": failures})
@@ -242,6 +266,8 @@ def replay_verified(
         "skill_version": skill.get("version", 1),
         "used_skill": True,
         "mode": "verified_replay",
+        "filename": params.get("filename"),
+        "location": params.get("location", "Desktop"),
     }
     if not result["success"] and allow_repair and repair_service is not None:
         if on_event:
