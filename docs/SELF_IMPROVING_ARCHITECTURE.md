@@ -3,7 +3,7 @@
 > **Audience:** AI agents and developers working on the self-improving replay/repair engine, now **merged to `main`** (originally landed on `feat/self-improving`).  
 > **Goal:** Explain how Rote turns a successful Gemini Computer Use run into a reusable, model-free skill — and how it repairs that skill when the UI drifts.
 
-> **Current repo status after the DB pivot:** the old tracked `database/skills/*.macro.json` seed catalog was intentionally deleted because those examples were stale. The local registry still exists for runtime repair/promotion state and explicit demo fixtures, but the voice/chat runtime now uses MongoDB `doc_type=skill` documents via `app.skill_store`.
+> **Current repo status after the DB pivot:** the old tracked `database/skills/*.macro.json` seed catalog was intentionally deleted because those examples were stale. The local registry still exists for runtime repair/promotion state and explicit demo fixtures, but the voice/chat runtime now uses MongoDB `doc_type=skill` documents via `app.skill_store`. Later sections that name `create_word_file`, `meeting_notes`, or `stale_create_word_file` describe the historical local-registry mechanics; those exact fixtures are no longer tracked unless a developer recreates or promotes them locally. The repeatable tracked demo fixture is currently `examples/demo_skills/stale_web_to_textedit_note.macro.json`.
 
 ---
 

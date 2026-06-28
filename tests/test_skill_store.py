@@ -54,6 +54,7 @@ class DocToMacroTests(unittest.TestCase):
 
     def test_placeholders_covered_by_params_is_replayable(self):
         doc = {"name": "ok", "surface": "desktop", "params": {"a": "1"},
+               "checker": {"type": "condition", "condition": {}},
                "steps": [{"id": "s1", "op": "type", "text": "{{a}}"}]}
         self.assertIsNotNone(skill_store._doc_to_macro(doc))
 

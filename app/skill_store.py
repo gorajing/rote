@@ -10,7 +10,7 @@ replayable document; retrieval hands the macro straight back to the replay engin
 
 CLI:
   python -m app.skill_store --list                 # what's in the DB
-  python -m app.skill_store --seed                 # one-time: push local demo macros into `tasks`
+  python -m app.skill_store --seed                 # push any local runtime macros, if present
 """
 from __future__ import annotations
 
@@ -167,7 +167,7 @@ def list_skills(limit: int = 200) -> list[dict]:
 
 
 def seed_from_local() -> list[str]:
-    """One-time migration: push the local demo macros into `tasks` so the agent finds them in the DB.
+    """Push local runtime macros into `tasks` when a developer has recreated/promoted them locally.
     Idempotent — skips any skill whose name is already stored. Not used at runtime (runtime is DB-only)."""
     existing = {s["name"] for s in list_skills()}
     ids = []
