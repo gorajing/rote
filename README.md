@@ -131,7 +131,7 @@ A flat list of steps replayed top to bottom. Ops:
 | `app/desktop_eval.py` | ✅ | skills-off ablation (cold vs skill-injected) |
 | `app/hud.py` | ⚠️ | early Tkinter HUD — superseded by `notch.py` (Tk can't render at the notch) |
 | `database/skills/*.macro.json` | ✅ | Gemini-authored, replayable skills |
-| `database/api.py` + `data/` | ✅ | flat-file agent-instruction registry (query by platform/address/purpose) |
+| `database/api.py` + `data/` | ✅ | local Skill lookup plus MongoDB Atlas semantic vector search |
 | **Browser track (original concept)** | | |
 | `app/cu_runner.py` | ✅ | Gemini CU loop on a Playwright browser → `Trajectory` |
 | `app/executor.py` | ✅ | Playwright action executor (full 3.5 browser action space) |
