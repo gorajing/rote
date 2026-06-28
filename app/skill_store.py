@@ -103,8 +103,8 @@ def _doc_to_macro(doc: dict) -> dict | None:
     macro.setdefault("name", doc.get("name") or "task")
     macro.setdefault("surface", doc.get("surface", "desktop"))
     macro.setdefault("params", {})
-    if not macro.get("checker"):
-        return None
+    macro["checker"] = macro.get("checker") or {}    # a skill without a checker still replays (it is
+    #                                                  simply not post-verified) — e.g. "open an app"
     # Only treat as replayable if every {{placeholder}} has a default value in params. This rejects
     # broken docs (e.g. older 'variables'-only skills with no param values) so the agent never tries
     # to replay something whose placeholders it can't fill -> it cleanly learns the task instead.

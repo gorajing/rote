@@ -31,9 +31,12 @@ class DocToMacroTests(unittest.TestCase):
         self.assertIsNotNone(macro)
         self.assertEqual(macro["steps"][0]["op"], "open_app")
 
-    def test_missing_checker_is_not_replayable(self):
+    def test_missing_checker_is_replayable_but_unverified(self):
+        # A skill with no checker (e.g. "open an app") still replays; it just isn't post-verified.
         doc = {"name": "x", "surface": "desktop", "steps": [{"op": "open_app", "app": "Word"}]}
-        self.assertIsNone(skill_store._doc_to_macro(doc))
+        macro = skill_store._doc_to_macro(doc)
+        self.assertIsNotNone(macro)
+        self.assertEqual(macro["checker"], {})
 
     def test_inactive_skill_doc_is_not_replayable(self):
         doc = _skill_doc("old", "old skill", 0.95)
