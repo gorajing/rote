@@ -11,6 +11,9 @@ from typing import Callable
 
 from .local_skill_registry import LocalSkillRegistry
 from .macro_skill import migrate_macro, resolve_params
+from .verification import check_final as _check_final
+from .verification import docx_contains as _docx_contains
+from .verification import evaluate_condition as _evaluate_condition
 
 
 class MacOSDesktopBackend:
@@ -23,6 +26,10 @@ class MacOSDesktopBackend:
         op = step["op"]
         if op == "open_app":
             return {"message": ensure_app(step["app"], float(step.get("launch_wait", 6)))}
+        if op == "quit_app":
+            subprocess.run(["osascript", "-e", f'tell application "{step["app"]}" to quit'],
+                           check=False, capture_output=True)
+            return {}
         if op == "wait":
             return {"settled_s": settle(max_wait=float(step.get("seconds", 2)))}
         if op == "hotkey":
@@ -59,11 +66,15 @@ class MacOSDesktopBackend:
             'if application "Microsoft Word" is running then tell application "Microsoft Word" '
             'to return count of documents'
         )
+        running = self._osa('tell application "System Events" to get name of every application process')
+        clipboard = self._osa('the clipboard as text')
         return {
             "foreground_app": foreground,
             "windows": windows,
             "ui_text": ui_text,
             "word_document_count": int(word_docs) if word_docs.isdigit() else 0,
+            "running_apps": [item.strip() for item in running.split(",") if item.strip()],
+            "clipboard": clipboard,
         }
 
 
@@ -74,63 +85,15 @@ def _location_path(location: str) -> Path:
 
 
 def docx_contains(path: Path, expected: str) -> bool:
-    if not path.exists():
-        return False
-    try:
-        xml = zipfile.ZipFile(path).read("word/document.xml").decode("utf-8", "ignore")
-        actual = " ".join(re.findall(r"<w:t[^>]*>([^<]+)</w:t>", xml))
-        return expected in actual
-    except (OSError, KeyError, zipfile.BadZipFile):
-        return False
+    return _docx_contains(path, expected)
 
 
 def evaluate_condition(condition: dict | None, state: dict, params: dict) -> tuple[bool, list[str]]:
-    condition = resolve_params(condition or {}, params)
-    failures = []
-    if condition.get("foreground_app") and state.get("foreground_app") != condition["foreground_app"]:
-        failures.append(f"foreground_app expected {condition['foreground_app']!r}, got {state.get('foreground_app')!r}")
-    if condition.get("app_window"):
-        needle = str(condition["app_window"]).lower()
-        if needle not in str(state.get("windows", "")).lower():
-            failures.append(f"app_window not found: {condition['app_window']}")
-    if condition.get("word_document") is True and state.get("word_document_count", 0) < 1:
-        failures.append("Word has no open document")
-    if condition.get("word_document") is False and state.get("word_document_count", 0) > 0:
-        failures.append("Word document unexpectedly open")
-    if condition.get("ui_text"):
-        needle = str(condition["ui_text"]).lower()
-        if needle not in str(state.get("ui_text", "")).lower():
-            failures.append(f"UI text not found: {condition['ui_text']}")
-    if condition.get("dialog"):
-        needle = str(condition["dialog"]).lower()
-        haystack = f"{state.get('windows', '')} {state.get('ui_text', '')}".lower()
-        if needle not in haystack:
-            failures.append(f"dialog not found: {condition['dialog']}")
-    if condition.get("file_exists"):
-        if not _location_path(condition.get("location", params.get("location", "Desktop"))).joinpath(
-            condition["file_exists"]
-        ).exists():
-            failures.append(f"file not found: {condition['file_exists']}")
-    return not failures, failures
+    return _evaluate_condition(condition, state, params)
 
 
-def check_final(checker: dict | None, params: dict) -> tuple[bool, list[str]]:
-    checker = resolve_params(checker or {}, params)
-    if not checker:
-        return True, []
-    if checker.get("type") != "word_docx":
-        return False, [f"unknown checker type: {checker.get('type')}"]
-    location = _location_path(checker.get("location", params.get("location", "Desktop")))
-    path = location / checker.get("filename", f"{params.get('filename', '')}.docx")
-    failures = []
-    if not path.exists():
-        failures.append(f"output file missing: {path}")
-    expected = checker.get("contains")
-    expected_values = expected if isinstance(expected, list) else [expected]
-    for value in expected_values:
-        if value is not None and not docx_contains(path, value):
-            failures.append(f"DOCX does not contain expected text: {value!r}")
-    return not failures, failures
+def check_final(checker: dict | None, params: dict, state: dict | None = None) -> tuple[bool, list[str]]:
+    return _check_final(checker, params, state)
 
 
 def _expand_steps(skill: dict, params: dict, registry: LocalSkillRegistry) -> list[dict]:
@@ -212,7 +175,7 @@ def replay_verified(
 
     checker_passed, checker_failures = (False, ["step execution failed"])
     if failed is None:
-        checker_passed, checker_failures = check_final(skill.get("checker"), params)
+        checker_passed, checker_failures = check_final(skill.get("checker"), params, backend.inspect())
     result = {
         "success": failed is None and checker_passed,
         "checker_passed": checker_passed,

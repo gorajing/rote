@@ -15,7 +15,7 @@ from google.genai import types
 
 from .config import CU_MODEL
 from .local_skill_registry import LocalSkillRegistry
-from .macro_skill import ALLOWED_OPS, resolve_params, validate_macro
+from .macro_skill import BROWSER_OPS, DESKTOP_OPS, resolve_params, validate_macro
 from .verified_replay import replay_verified
 
 
@@ -34,13 +34,14 @@ class _OverlayRegistry:
         return self.base.load_skill(name, version)
 
 
-def _clean_steps(value, params: dict, id_prefix: str = "repair") -> list[dict]:
+def _clean_steps(value, params: dict, id_prefix: str = "repair", surface: str = "desktop") -> list[dict]:
     steps = value.get("replacement_steps") if isinstance(value, dict) else None
     if not isinstance(steps, list) or not 1 <= len(steps) <= MAX_REPAIR_STEPS:
         raise ValueError(f"repair must contain 1-{MAX_REPAIR_STEPS} replacement_steps")
     cleaned = []
+    allowed = (DESKTOP_OPS if surface == "desktop" else BROWSER_OPS) - {"call"}
     for index, raw in enumerate(steps, 1):
-        if not isinstance(raw, dict) or raw.get("op") not in ALLOWED_OPS - {"call"}:
+        if not isinstance(raw, dict) or raw.get("op") not in allowed:
             raise ValueError(f"invalid repair operation at index {index}")
         if any(key in raw for key in ("x", "y", "coords")):
             raise ValueError("coordinate-dependent repair rejected")
@@ -49,6 +50,26 @@ def _clean_steps(value, params: dict, id_prefix: str = "repair") -> list[dict]:
             if literal and literal in encoded and "{{" + name + "}}" not in encoded:
                 raise ValueError(f"repair hardcodes parameter {name}; use {{{{{name}}}}}")
         step = copy.deepcopy(raw)
+        if surface == "browser" and step["op"] in {"click", "fill", "select", "check", "uncheck"}:
+            target = step.get("target")
+            if isinstance(target, str):
+                target = {"text": target}
+            elif isinstance(target, dict) and target.get("type") in {"role", "text", "label", "css", "testid"}:
+                kind = target.pop("type")
+                value = target.pop("value", target.pop("selector", target.get("name")))
+                target = {kind: value, **target}
+            if not target:
+                selector = step.pop("selector", step.pop("css_selector", None))
+                target_text = step.pop("target_text", step.pop("element", None))
+                if selector:
+                    target = {"css": selector}
+                elif target_text:
+                    target = {"text": target_text}
+                elif step.get("role"):
+                    target = {"role": step.pop("role"), "name": step.pop("name", None)}
+            step["target"] = target
+            if not isinstance(target, dict) or not any(k in target for k in ("role", "text", "label", "css", "testid")):
+                raise ValueError("browser repair requires semantic targets")
         step.setdefault("id", f"{id_prefix}_repair_{index}_{step['op']}")
         step.setdefault("precondition", {})
         step.setdefault("postcondition", {})
@@ -73,10 +94,13 @@ def _screenshot_bytes(backend) -> bytes | None:
 def repair_failed_step(skill: dict, failure_context: dict, params: dict, *, backend=None, client=None) -> list[dict]:
     failure = failure_context.get("failure") or failure_context
     failed = failure.get("step", {})
+    surface = skill.get("surface", "desktop")
+    allowed = sorted((DESKTOP_OPS if surface == "desktop" else BROWSER_OPS) - {"call"})
     prompt = {
         "instruction": (
             "Repair only the failed macro transition. Return JSON with replacement_steps. "
-            "Use only open_app, wait, hotkey, key, or type; no coordinates. Preserve {{param}} "
+            f"Surface is {surface}. Use only these operations: {allowed}; no coordinates. "
+            "Browser actions must use role/text/label/css/testid semantic targets. Preserve {{param}} "
             "references. The final replacement step must satisfy the failed postcondition."
         ),
         "skill": skill["name"],
@@ -102,7 +126,7 @@ def repair_failed_step(skill: dict, failure_context: dict, params: dict, *, back
         config={"response_mime_type": "application/json"},
     )
     text = re.sub(r"^```(?:json)?|```$", "", response.text.strip(), flags=re.MULTILINE).strip()
-    return _clean_steps(json.loads(text), params, failed.get("id", "repair"))
+    return _clean_steps(json.loads(text), params, failed.get("id", "repair"), surface)
 
 
 def _replace_step(owner: dict, step_id: str, replacement: list[dict]) -> dict:

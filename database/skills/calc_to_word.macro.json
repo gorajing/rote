@@ -1,104 +1,24 @@
 {
+  "schema_version": 2,
+  "surface": "desktop",
   "name": "calculator_to_word_save",
-  "app": "Microsoft Word",
+  "app": "Calculator + Microsoft Word",
   "os": "macos",
-  "note": "Performs a calculation in Calculator, copies the result, pastes it into a new Word document, and saves the document as 'calc_result' on the Desktop.",
-  "params": {
-    "calculation": "1234+5678",
-    "filename": "calc_result"
-  },
+  "version": 1,
+  "parent_version": null,
+  "status": "active",
+  "note": "Calculate a value, transfer it through the clipboard, and verify the saved Word document.",
+  "params": {"calculation": "1234+5678", "expected_result": "6912", "filename": "calc_result", "location": "Desktop"},
+  "checker": {"type": "word_docx", "location": "{{location}}", "filename": "{{filename}}.docx", "contains": ["Calculation result:", "{{expected_result}}"]},
+  "stats": {"uses": 0, "successes": 0, "failures": 0, "success_rate": 0.0, "avg_duration": 0.0, "model_calls": 0},
   "steps": [
-    {
-      "op": "open_app",
-      "app": "Calculator",
-      "launch_wait": 6,
-      "why": "Focus the Calculator app"
-    },
-    {
-      "op": "key",
-      "key": "escape",
-      "why": "Clear any existing calculation"
-    },
-    {
-      "op": "type",
-      "text": "1234+5678=",
-      "why": "Perform the calculation 1234 + 5678"
-    },
-    {
-      "op": "hotkey",
-      "keys": ["command", "c"],
-      "why": "Copy the calculation result"
-    },
-    {
-      "op": "open_app",
-      "app": "Microsoft Word",
-      "launch_wait": 6,
-      "why": "Switch to Microsoft Word"
-    },
-    {
-      "op": "hotkey",
-      "keys": ["command", "n"],
-      "why": "Create a new document or open the template chooser"
-    },
-    {
-      "op": "wait",
-      "seconds": 2,
-      "why": "Wait for Word to handle the new document action"
-    },
-    {
-      "op": "key",
-      "key": "return",
-      "why": "Select Blank Document in the template chooser if it appears"
-    },
-    {
-      "op": "wait",
-      "seconds": 2,
-      "why": "Wait for the blank document to open"
-    },
-    {
-      "op": "type",
-      "text": "Calculation result: ",
-      "why": "Type the label text in the document"
-    },
-    {
-      "op": "hotkey",
-      "keys": ["command", "v"],
-      "why": "Paste the calculation result"
-    },
-    {
-      "op": "wait",
-      "seconds": 1,
-      "why": "Wait for the paste operation to complete"
-    },
-    {
-      "op": "hotkey",
-      "keys": ["command", "s"],
-      "why": "Trigger the save dialog"
-    },
-    {
-      "op": "wait",
-      "seconds": 2,
-      "why": "Wait for the save dialog to appear"
-    },
-    {
-      "op": "hotkey",
-      "keys": ["command", "d"],
-      "why": "Set the save destination to the Desktop"
-    },
-    {
-      "op": "wait",
-      "seconds": 1,
-      "why": "Wait for the folder selection to update"
-    },
-    {
-      "op": "type",
-      "text": "calc_result",
-      "why": "Type the file name"
-    },
-    {
-      "op": "key",
-      "key": "return",
-      "why": "Confirm and save the document"
-    }
+    {"id": "open_calculator", "op": "open_app", "app": "Calculator", "launch_wait": 6, "precondition": {}, "postcondition": {"foreground_app": "Calculator"}, "timeout": 6, "retry_limit": 1, "fallback": [], "why": "Open Calculator"},
+    {"id": "clear_calculator", "op": "key", "key": "escape", "precondition": {"foreground_app": "Calculator"}, "postcondition": {"foreground_app": "Calculator"}, "timeout": 2, "retry_limit": 0, "fallback": [], "why": "Clear the previous calculation"},
+    {"id": "calculate", "op": "type", "text": "{{calculation}}=", "precondition": {"foreground_app": "Calculator"}, "postcondition": {"foreground_app": "Calculator"}, "timeout": 2, "retry_limit": 0, "fallback": [], "why": "Perform the requested calculation"},
+    {"id": "copy_result", "op": "hotkey", "keys": ["command", "c"], "precondition": {"foreground_app": "Calculator"}, "postcondition": {"clipboard_contains": "{{expected_result}}"}, "timeout": 2, "retry_limit": 1, "fallback": [], "why": "Copy and verify the calculation result"},
+    {"id": "prepare_document", "op": "call", "skill": "ensure_blank_document", "params": {}, "precondition": {}, "postcondition": {}, "timeout": 10, "retry_limit": 0, "fallback": [], "why": "Prepare a Word document"},
+    {"id": "enter_label", "op": "type", "text": "Calculation result: ", "precondition": {"foreground_app": "Microsoft Word", "word_document": true}, "postcondition": {"word_document": true}, "timeout": 2, "retry_limit": 0, "fallback": [], "why": "Type the result label"},
+    {"id": "paste_result", "op": "hotkey", "keys": ["command", "v"], "precondition": {"clipboard_contains": "{{expected_result}}", "word_document": true}, "postcondition": {"word_document": true}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Paste the verified result"},
+    {"id": "save_document", "op": "call", "skill": "save_word_document", "params": {"filename": "{{filename}}", "location": "{{location}}"}, "precondition": {}, "postcondition": {}, "timeout": 12, "retry_limit": 0, "fallback": [], "why": "Save and verify the result document"}
   ]
 }

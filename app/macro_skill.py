@@ -8,7 +8,9 @@ from typing import Any
 
 
 SCHEMA_VERSION = 2
-ALLOWED_OPS = {"open_app", "wait", "hotkey", "key", "type", "call"}
+DESKTOP_OPS = {"open_app", "quit_app", "wait", "hotkey", "key", "type", "call"}
+BROWSER_OPS = {"navigate", "click", "fill", "press", "select", "check", "uncheck", "scroll", "wait", "call"}
+ALLOWED_OPS = DESKTOP_OPS | BROWSER_OPS
 
 
 def _slug(value: str) -> str:
@@ -33,6 +35,7 @@ def migrate_macro(macro: dict) -> dict:
     """Return an in-memory v2 copy. The source dictionary/file is never modified."""
     source = copy.deepcopy(macro)
     if source.get("schema_version") == SCHEMA_VERSION:
+        source.setdefault("surface", "desktop")
         validate_macro(source)
         return source
 
@@ -54,6 +57,7 @@ def migrate_macro(macro: dict) -> dict:
     migrated = {
         **{key: value for key, value in source.items() if key != "steps"},
         "schema_version": SCHEMA_VERSION,
+        "surface": source.get("surface", "desktop"),
         "version": int(source.get("version", 1)),
         "parent_version": source.get("parent_version"),
         "status": source.get("status", "active"),
@@ -74,13 +78,21 @@ def validate_macro(macro: dict) -> None:
     if not macro.get("name") or not isinstance(macro.get("steps"), list):
         raise ValueError("macro requires name and steps")
     seen = set()
+    surface = macro.get("surface", "desktop")
+    allowed = DESKTOP_OPS if surface == "desktop" else BROWSER_OPS if surface == "browser" else set()
+    if not allowed:
+        raise ValueError(f"unsupported macro surface: {surface}")
     for step in macro["steps"]:
-        if step.get("op") not in ALLOWED_OPS:
+        if step.get("op") not in allowed:
             raise ValueError(f"unsupported macro op: {step.get('op')}")
         if not step.get("id") or step["id"] in seen:
             raise ValueError(f"missing or duplicate step id: {step.get('id')}")
         if any(key in step for key in ("x", "y", "coords")):
             raise ValueError(f"coordinate-dependent macro step rejected: {step['id']}")
+        if surface == "browser" and step.get("op") in {"click", "fill", "select", "check", "uncheck"}:
+            target = step.get("target")
+            if not isinstance(target, dict) or not any(key in target for key in ("role", "text", "label", "css", "testid")):
+                raise ValueError(f"browser step requires a semantic target: {step['id']}")
         seen.add(step["id"])
 
 

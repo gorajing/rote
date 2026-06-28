@@ -34,6 +34,10 @@ def main() -> None:
         return
 
     skill = registry.load_skill(args.skill)
+    if skill.get("surface", "desktop") != "desktop":
+        raise SystemExit(
+            f"{args.skill} is a browser skill; use `python -m app.browser_self_improve {args.command} {args.skill}`"
+        )
     params = {**skill.get("params", {}), **_params(args.param)}
 
     def event(kind, payload):

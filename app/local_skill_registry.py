@@ -34,13 +34,25 @@ class LocalSkillRegistry:
     def _version_path(self, name: str, version: int) -> Path:
         return self.store / name / f"v{version}.json"
 
+    def _source_path(self, name: str) -> Path:
+        direct = self.root / f"{name}.macro.json"
+        if direct.exists():
+            return direct
+        for path in self.root.glob("*.macro.json"):
+            try:
+                if json.loads(path.read_text(encoding="utf-8")).get("name") == name:
+                    return path
+            except (OSError, json.JSONDecodeError):
+                continue
+        return direct
+
     def load_skill(self, name: str, version: int | None = None) -> dict:
         index = self._index()
         entry = index["skills"].get(name, {})
         selected = version if version is not None else entry.get("active_version")
         if selected is not None and self._version_path(name, int(selected)).exists():
             return migrate_macro(json.loads(self._version_path(name, int(selected)).read_text(encoding="utf-8")))
-        legacy = self.root / f"{name}.macro.json"
+        legacy = self._source_path(name)
         if not legacy.exists():
             raise FileNotFoundError(f"skill not found: {name}")
         return migrate_macro(json.loads(legacy.read_text(encoding="utf-8")))
@@ -69,7 +81,7 @@ class LocalSkillRegistry:
             if previous_path.exists():
                 previous = json.loads(previous_path.read_text(encoding="utf-8"))
             else:
-                legacy_path = self.root / f"{candidate['name']}.macro.json"
+                legacy_path = self._source_path(candidate["name"])
                 previous = migrate_macro(json.loads(legacy_path.read_text(encoding="utf-8"))) \
                     if legacy_path.exists() else None
             if previous is not None:
@@ -121,7 +133,7 @@ class LocalSkillRegistry:
                 "parent_version": value.get("parent_version"),
                 "validation": value.get("validation"), "path": str(path),
             })
-        legacy = self.root / f"{name}.macro.json"
+        legacy = self._source_path(name)
         if legacy.exists() and not any(int(item["version"]) == 1 for item in result):
             value = migrate_macro(json.loads(legacy.read_text(encoding="utf-8")))
             result.insert(0, {
