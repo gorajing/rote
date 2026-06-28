@@ -23,6 +23,9 @@ def main():
     ap.add_argument("--repair", action="store_true", help="repair one failed transition and validate it")
     ap.add_argument("--events", action="store_true",
                     help="emit @@EV <json> lines on stdout for an external narrator (e.g. the voice agent)")
+    ap.add_argument("--headless", action="store_true",
+                    help="run the replay without spawning the notch HUD (the voice agent owns one "
+                         "persistent notch and renders the @@EV stream itself)")
     ap.add_argument("--params", default=None,
                     help="JSON object of param overrides, e.g. a dynamic calculation")
     a = ap.parse_args()
@@ -37,7 +40,7 @@ def main():
     else:
         with open(a.replay, encoding="utf-8") as macro_file:
             macro = json.load(macro_file)
-    hud = NotchIsland()
+    hud = _NullHud() if a.headless else NotchIsland()
 
     def work():
         def event(kind, payload):
@@ -69,7 +72,17 @@ def main():
         )
         hud.finish("Done ✓" if result["success"] else "Verification failed")
 
-    hud.run(work)
+    if a.headless:
+        work()                          # no AppKit window; just run + emit @@EV
+    else:
+        hud.run(work)
+
+
+class _NullHud:
+    """No-op stand-in so work() can call the HUD API while the persistent notch lives elsewhere."""
+    def step(self, *a, **k): pass
+    def status(self, *a, **k): pass
+    def finish(self, *a, **k): pass
 
 
 if __name__ == "__main__":

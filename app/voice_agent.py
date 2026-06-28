@@ -12,6 +12,7 @@ Run (dev mode, connects to your LiveKit Cloud project and the Agent Console):
   python3 -m app.voice_agent dev
 """
 import asyncio
+import atexit
 import json
 import os
 import random
@@ -25,9 +26,28 @@ from livekit.agents import (
 )
 from livekit.agents.llm import ToolError
 
+from .notch_client import NotchClient, ensure_daemon
+
 REPO = Path(__file__).resolve().parent.parent
 load_dotenv(REPO / ".env")                       # LIVEKIT_* + GEMINI/GOOGLE keys
 SKILLS_DIR = REPO / "database" / "skills"
+
+# The persistent notch companion. NOTCH.send() is fire-and-forget and no-ops if the notch isn't up,
+# so voice works with or without it. _BUSY guards the working ring from being overridden by the
+# agent's own speaking/listening state changes mid-replay.
+NOTCH = NotchClient()
+_BUSY = {"skill": False}
+_DAEMON = None
+
+
+def _start_notch():
+    """Spawn the notch daemon once and make sure it's torn down on exit."""
+    global _DAEMON
+    if _DAEMON is not None:
+        return
+    _DAEMON = ensure_daemon()
+    if _DAEMON is not None:
+        atexit.register(lambda: _DAEMON and _DAEMON.terminate())
 
 
 def _skill_catalog() -> dict[str, str]:
@@ -164,7 +184,9 @@ class RoteAssistant(Agent):
         context.disallow_interruptions()             # desktop action — don't cut it off mid-run
         pretty = skill.replace("_", " ")
 
-        cmd = ["python3", "-u", "-m", "app.desktop_hud", "--replay", str(path), "--events"]
+        # --headless: the replay emits @@EV but does NOT open its own notch; this agent owns the one
+        # persistent notch and renders the step stream onto it (see the @@EV loop below).
+        cmd = ["python3", "-u", "-m", "app.desktop_hud", "--replay", str(path), "--events", "--headless"]
         if calculation.strip():                       # dynamic calculation -> override macro params
             expected = _eval_calc(calculation)
             if expected is None:
@@ -173,8 +195,10 @@ class RoteAssistant(Agent):
                                             "expected_result": expected})]
 
         _say(context.session, random.choice(_INTROS))
-        # run main's verified replay in a subprocess (owns the notch HUD's AppKit main thread),
-        # asking it to stream engine events (@@EV json) which we narrate live. -u = unbuffered.
+        _BUSY["skill"] = True                         # working ring owns the notch until we finish
+        NOTCH.send("working", title="Starting…", i=0, total=1)
+        # run main's verified replay in a subprocess (headless), asking it to stream engine events
+        # (@@EV json) which we narrate live AND render on the notch. -u = unbuffered.
         proc = await asyncio.create_subprocess_exec(
             *cmd, cwd=str(REPO),
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
@@ -182,42 +206,100 @@ class RoteAssistant(Agent):
         tail = []
         opened, said_work, said_save = 0, False, False
         assert proc.stdout is not None
-        async for raw in proc.stdout:
-            line = raw.decode("utf-8", "ignore")
-            tail.append(line)
-            if not line.startswith("@@EV "):
-                continue
-            try:
-                ev = json.loads(line[5:])
-            except Exception:
-                continue
-            kind = ev.get("kind")
-            if kind == "step":
-                op = ev.get("op") or ""
-                why = (ev.get("why") or "").lower()
-                keys = {str(k).lower() for k in (ev.get("keys") or [])}
-                ref = (ev.get("skill") or "").lower()
-                app = ev.get("app") or "the app"
-                if op == "open_app":
-                    _say(context.session,
-                         random.choice(_OPEN_FIRST if opened == 0 else _OPEN_NEXT).format(app=app))
-                    opened += 1
-                elif (keys == {"command", "s"} or "save" in ref or "save" in why) and not said_save:
-                    said_save = True
-                    _say(context.session, random.choice(_SAVING))
-                elif op in ("type", "call") and not said_work:
-                    said_work = True
-                    _say(context.session, random.choice(_WORKING))
-            elif kind == "repairing":
-                _say(context.session, "One sec, let me fix a step for you.")
-            elif kind == "promoted":
-                _say(context.session, "Fixed and verified.")
-            elif kind == "rejected":
-                _say(context.session, "Hmm, that fix didn't hold.")
-        await proc.wait()
-        if proc.returncode != 0:
-            raise ToolError(f"The {pretty} task didn't complete: {''.join(tail)[-300:]}")
-        return random.choice(_DONE)
+        try:
+            async for raw in proc.stdout:
+                line = raw.decode("utf-8", "ignore")
+                tail.append(line)
+                if not line.startswith("@@EV "):
+                    continue
+                try:
+                    ev = json.loads(line[5:])
+                except Exception:
+                    continue
+                kind = ev.get("kind")
+                if kind == "step":
+                    op = ev.get("op") or ""
+                    why = (ev.get("why") or "").lower()
+                    keys = {str(k).lower() for k in (ev.get("keys") or [])}
+                    ref = (ev.get("skill") or "").lower()
+                    app = ev.get("app") or "the app"
+                    is_save = keys == {"command", "s"} or "save" in ref or "save" in why
+                    NOTCH.send("working", i=ev.get("index", 0), total=ev.get("total", 1),
+                               title=_notch_step_title(op, app, is_save))
+                    if op == "open_app":
+                        _say(context.session,
+                             random.choice(_OPEN_FIRST if opened == 0 else _OPEN_NEXT).format(app=app))
+                        opened += 1
+                    elif is_save and not said_save:
+                        said_save = True
+                        _say(context.session, random.choice(_SAVING))
+                    elif op in ("type", "call") and not said_work:
+                        said_work = True
+                        _say(context.session, random.choice(_WORKING))
+                elif kind == "repairing":
+                    NOTCH.send("working", title="Fixing a step…")
+                    _say(context.session, "One sec, let me fix a step for you.")
+                elif kind == "promoted":
+                    _say(context.session, "Fixed and verified.")
+                elif kind == "rejected":
+                    _say(context.session, "Hmm, that fix didn't hold.")
+            await proc.wait()
+            if proc.returncode != 0:
+                NOTCH.send("error", title="Couldn't finish")
+                await asyncio.sleep(1.4)              # let the error read before it collapses
+                raise ToolError(f"The {pretty} task didn't complete: {''.join(tail)[-300:]}")
+            NOTCH.send("done", title="Done")
+            await asyncio.sleep(1.2)                  # hold the green check before the spoken wrap-up
+            return random.choice(_DONE)
+        finally:
+            _BUSY["skill"] = False
+
+
+def _notch_step_title(op: str, app: str, is_save: bool) -> str:
+    """Terse, presentable label for the notch (the spoken narration stays conversational)."""
+    if op == "open_app":
+        return f"Opening {app}"
+    if is_save:
+        return "Saving to Desktop"
+    return "Working…"
+
+
+def _wire_notch(session) -> None:
+    """Forward AgentSession state to the persistent notch. All handlers no-op while a skill is
+    replaying (the working ring owns the notch then) and silently no-op if no notch is up."""
+    @session.on("agent_state_changed")
+    def _on_state(ev):
+        if _BUSY["skill"]:
+            return
+        st = getattr(ev, "new_state", None)
+        if st == "listening":
+            NOTCH.send("listening", title="Listening…")
+        elif st == "thinking":
+            NOTCH.send("thinking", title="Thinking…")
+        elif st == "speaking":
+            NOTCH.send("speaking", title="Speaking")
+        elif st == "idle":
+            NOTCH.send("idle", title="Rote", subtitle="")
+
+    @session.on("user_input_transcribed")
+    def _on_tx(ev):
+        if _BUSY["skill"]:
+            return
+        text = (getattr(ev, "transcript", "") or "").strip()
+        if text:
+            NOTCH.send("listening", title="Listening…", subtitle=text[-44:])
+
+    @session.on("user_state_changed")
+    def _on_user(ev):
+        if _BUSY["skill"]:
+            return
+        NOTCH.send(level=1.0 if getattr(ev, "new_state", None) == "speaking" else 0.0)
+
+    @session.on("error")
+    def _on_err(ev):
+        err = getattr(ev, "error", None)
+        if err is not None and not getattr(err, "recoverable", True):
+            NOTCH.send("error", title="Couldn't finish")
 
 
 server = AgentServer()
@@ -240,7 +322,10 @@ async def rote(ctx: agents.JobContext):
             preemptive_generation={"preemptive_tts": True},                     # start TTS early
         ),
     )
+    _start_notch()                                   # bring up the persistent notch companion
+    _wire_notch(session)                             # forward listening/thinking/speaking + transcript
     await session.start(room=ctx.room, agent=RoteAssistant())
+    NOTCH.send("listening", title="Listening…")
     # generate_reply is ignored on 3.1 live models, so greet with a direct spoken line
     _say(session, "Hey, I'm Rote. Tell me a task and I'll run it on your Mac instantly.")
 
