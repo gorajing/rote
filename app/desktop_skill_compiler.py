@@ -20,6 +20,7 @@ COMPILER_MODEL = os.getenv("ROTE_COMPILER_MODEL", CU_MODEL)
 SCHEMA = """You output ONLY a JSON object with this exact shape:
 {
   "schema_version": 2,
+  "surface": "desktop_or_browser",
   "name": "<short_snake_case_task_name>",
   "app": "<the macOS app driven, e.g. Microsoft Word>",
   "os": "macos",
@@ -59,6 +60,13 @@ Allowed step ops (keyboard-first -- avoid coordinate clicks):
   {"op":"key","key":"return","why":"..."}             a single key
   {"op":"type","text":"...","why":"..."}              type literal text
   {"op":"wait","seconds":2,"why":"..."}                pause for the app to catch up
+
+For browser workflows use surface "browser", include a start_url, and use only semantic steps:
+  {"op":"navigate","url":"https://...","why":"..."}
+  {"op":"click","target":{"role":"link","text":"..."},"why":"..."}
+  {"op":"fill","target":{"label":"Search"},"text":"{{query}}","why":"..."}
+  {"op":"press","key":"Enter","why":"..."}
+Browser targets must use role/text/label/css/testid and must never contain coordinates.
 """
 
 INSTRUCTIONS = """You are a skill compiler. Below is a recorded computer-use trajectory: a list
@@ -76,6 +84,12 @@ NO screenshots and NO model calls. Rules:
 - Add deterministic preconditions and postconditions where macOS can inspect them. Supported
   conditions are foreground_app, app_window, word_document, ui_text, dialog, and file_exists.
 - For Word output, add a word_docx checker that verifies the parameterized filename and content.
+- For browser output, add a condition checker for a deterministic final URL, title, or visible text.
+- For other desktop output, add a file/text_file checker or an explicit reset adapter plus a
+  deterministic condition/http_json checker. If the result cannot be checked deterministically,
+  return a macro with an empty checker; it will be retained but never promoted.
+- Set surface to browser only for a workflow that can be replayed with semantic browser targets;
+  otherwise use desktop keyboard operations.
 - Never assume an app is open. Before interacting with any app, and whenever switching back to
   one, emit {"op":"open_app","app":"<Name>","launch_wait":6}. Do not add a separate wait after
   open_app, use Command+Tab, or click to switch apps.

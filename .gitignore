@@ -9,4 +9,5 @@ traces/
 .pytest_cache/
 node_modules/
 *.log
+*.egg-info/
 database/skills/registry/

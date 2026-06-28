@@ -52,7 +52,9 @@ python -m app.fusion.test_skills --split all        # cold → compile → repla
 
 ## Recall — say it, and it remembers
 
-Learning is worthless if a skill can't be found again. `app/fusion/recall.py` embeds each promoted skill's intent into a **local-first** index and matches a plain-language goal to the right learned skill — closing the continual-learning loop:
+Learning is worthless if a skill can't be found again. Macro, fusion, voice, and MCP entry points
+now share an **Atlas-first** semantic recall service. A synchronized local embedding cache is used
+when Atlas is unavailable; the legacy fusion recall index remains a migration fallback.
 
 ```
 intent  →  recall(intent)  →  load the learned skill  →  fusion replay at 0 CU, verified
@@ -63,7 +65,8 @@ python -m app.fusion.recall --backfill
 python -m app.fusion.recall "refund the paid Globex invoice"   # → fused_train-refund-globex (0.82)
 ```
 
-Cosine match runs in-process (no network at recall time beyond embedding the query — a cheap *text* call, not a computer-use call, so replay stays 0 CU). MongoDB Atlas (`database/api.py`) is an **optional** cross-agent share, never a runtime dependency.
+Recall is still a cheap text-embedding operation, not a Computer Use call. Atlas stores common
+descriptors for verified macro and fusion skills; local registries remain the executable source of truth.
 
 ---
 
@@ -145,7 +148,7 @@ python3 -m app.voice_agent console     # then say: "calculate 52 times 68 and sa
 | `app/verified_replay.py` · `app/verification.py` | condition-checked macro replay + DSL |
 | `app/local_skill_registry.py` · `app/skill_repair.py` | versioned promotion + localized repair |
 | `app/notch.py` · `app/desktop_hud.py` · `app/voice_agent.py` | notch HUD · HUD runner · voice agent |
-| `database/api.py` + `data/` | **optional** vector store (Atlas) for cross-agent skill sharing — *seed/mock data; recall is local-first and does not depend on it* |
+| `services/database_gateway.py` + `mcp/rote_mcp/recall.py` | HTTP-isolated Atlas recall + local semantic fallback |
 | File | Status | Responsibility |
 |---|---|---|
 | `app/schemas.py` | ✅ | frozen contracts: `Task`, `Step`, `Trajectory`, `Skill` |
@@ -170,9 +173,8 @@ python3 -m app.voice_agent console     # then say: "calculate 52 times 68 and sa
 | `app/executor.py` | ✅ | Playwright action executor (full 3.5 browser action space) |
 | `app/runner.py` | ✅ | browser entry point / smoke test |
 | `app/trace.py` | ✅ | trajectory recorder |
-| **Not built yet** | | |
-| Atlas registry sync, desktop eval fleet | ⛔ todo | Atlas search descriptors are supported; remote executable registry remains |
-| `app/mcp_server.py` | ✅ | FastMCP stdio server for desktop skill search, inspection, and verified replay |
+| `mcp/rote_mcp/` | ✅ | FastMCP server, descriptor projection, recall, promotion, HTTP storage client |
+| `services/database_gateway.py` | ✅ | Network boundary over unchanged `database.api.push/retrieve` |
 
 ---
 
@@ -198,14 +200,28 @@ python -m app.runner --url https://www.google.com --intent "Search for 'Gemini A
 
 ### FastMCP server
 
-The MCP server uses MongoDB Atlas for semantic discovery and the local versioned registry as the
-source of executable macros. Index active desktop skills explicitly, then configure an MCP client
-to launch the stdio server:
+The MCP server has no direct MongoDB access. It calls a local database gateway, which wraps the
+unchanged `database.api.push()` and `retrieve()` functions. Atlas provides semantic discovery and
+the local versioned registry remains the
+source of executable macro and fusion skills. All verified skill descriptors, including desktop and browser skills,
+and CU traces live in `automated_tasks.tasks`. Desktop keyboard shortcuts follow
+`database/automation_shortcut.schema.json`. When no
+verified skill matches, `execute_new_task` falls back to
+Gemini Computer Use and records a trace. A completed trace is automatically compiled into a
+candidate. A clean deterministic replay and checker pass produces a deterministic verified skill.
+If deterministic compilation or replay fails, the trace is registered as an `adaptive` verified
+skill instead. Adaptive skills are searchable and executable, with
+`verification_mode=adaptive_cu` and `checker.type=adaptive_cu`; replay uses the recorded semantic
+action path as a Computer Use hint and validates the live screen during execution.
+Index active
+desktop skills explicitly, then configure an MCP client to launch the stdio server:
 
 ```bash
-python -m app.skill_search_index --dry-run   # inspect descriptors without writing Atlas
-python -m app.skill_search_index             # embed and upsert descriptors in Atlas
-python -m app.mcp_server                     # stdio server (normally launched by the MCP client)
+pip install -e ./mcp
+python -m services.database_gateway       # terminal 1: DB API on 127.0.0.1:8810
+python -m rote_mcp.descriptors --dry-run  # inspect verified descriptors
+python -m rote_mcp.descriptors            # optional backfill through the gateway
+python -m rote_mcp.server                 # terminal 2, normally launched by the MCP client
 ```
 
 Example client configuration (use absolute paths on your machine):
@@ -215,16 +231,27 @@ Example client configuration (use absolute paths on your machine):
   "mcpServers": {
     "rote": {
       "command": "/absolute/path/to/rote/.venv/bin/python",
-      "args": ["-m", "app.mcp_server"],
-      "cwd": "/absolute/path/to/rote"
+      "args": ["-m", "rote_mcp.server"],
+      "cwd": "/absolute/path/to/rote",
+      "env": {"ROTE_DATABASE_API_URL": "http://127.0.0.1:8810"}
     }
   }
 }
 ```
 
-The Atlas Vector Search index `description` must index `embedding` as the vector field and
-`doc_type`, `surface`, `status`, `checker_verified`, and `app` as filter fields. Desktop replay
-controls the real keyboard and mouse and therefore requires `confirm_execution=true` on every call.
+The gateway must be running before the MCP client if Atlas search, trace persistence, and remote
+skill persistence are required. If it is unavailable, verified skills already present in the local
+semantic cache remain recallable and failed writes stay in `pending_skill_sync.json`.
+
+The Atlas Vector Search index `description` indexes `embedding` in `tasks`; `doc_type` excludes CU
+traces before ranking. Prefer the MCP `execute_task` tool: it recalls, binds variables, and routes
+to macro replay, fusion replay, trace-assisted CU, or cold CU. Desktop replay controls the real keyboard and mouse and therefore
+requires `confirm_execution=true` on every call.
+Unverified Computer Use runs are embedded in `automated_tasks.tasks`; similar future tasks may use
+their redacted, coordinate-free action sequence as a non-binding hint, but never as verified replay.
+User-provided literals are projected as `{{variable_name}}` placeholders in Atlas documents. MCP
+callers provide a `variables` object for new CU tasks and runtime `params` for verified replay;
+literal values are used during execution but are not persisted in skill or trace documents.
 
 ⚠️ The desktop track moves your real mouse and keyboard. Keep hands off while it runs; slam the mouse into a screen corner to abort (pyautogui failsafe).
 

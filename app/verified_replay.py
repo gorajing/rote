@@ -163,13 +163,19 @@ def replay_verified(
     steps = _expand_steps(skill, params, registry)
 
     # ---- OPTIMISTIC FAST PATH: run blind with dynamic waits, verify once at the end ----
-    if optimistic:
+    # A fast replay is only verifiable when a real final checker exists. An empty checker would
+    # otherwise turn every blind execution into a false success and bypass diagnostic repair.
+    if optimistic and skill.get("checker"):
         for index, step in enumerate(steps, 1):
             if on_event:
                 on_event("step", {"index": index, "total": len(steps), "step": step})
             backend.execute(step)                          # dynamic waits inside; no inspection
-        # file/HTTP checkers don't need desktop state -> skip the expensive final inspect() scan
-        passed, failures = check_final(skill.get("checker"), params)
+        # File and HTTP checkers inspect external state directly. Condition checkers need the
+        # backend's final UI/browser state even on the optimistic path.
+        checker_kind = skill["checker"].get("type", "condition")
+        final_state = None if checker_kind in {"file", "text_file", "word_docx", "http_json"} \
+            else backend.inspect()
+        passed, failures = check_final(skill["checker"], params, final_state)
         if passed or not (allow_repair and repair_service is not None):
             return {
                 "success": passed, "checker_passed": passed,

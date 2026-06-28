@@ -26,6 +26,9 @@ class PlaywrightBrowserBackend:
         timeout = int(float(step.get("timeout", 5)) * 1000)
         if op == "navigate":
             self.page.goto(step["url"], wait_until="domcontentloaded", timeout=timeout)
+            # Modern SPAs often paint meaningful content after DOMContentLoaded. Give the page a
+            # short bounded hydration window before the replay engine inspects postconditions.
+            self.page.wait_for_timeout(min(2000, timeout))
         elif op == "wait":
             self.page.wait_for_timeout(float(step.get("seconds", 1)) * 1000)
         elif op == "press":

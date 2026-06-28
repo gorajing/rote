@@ -21,6 +21,7 @@ import time
 import base64
 import argparse
 import subprocess
+import urllib.parse
 
 import pyautogui
 from PIL import Image
@@ -135,11 +136,34 @@ def execute(fname: str, args: dict) -> dict:
     n = fname.lower()
     try:
         pt = _denorm(args)
-        if any(k in n for k in ("open_web_browser", "take_screenshot", "navigate",
-                                "go_back", "go_forward", "search", "wait_5")):
-            if "wait" in n:
-                time.sleep(3)
-            return {"note": f"{fname} is browser-only; no-op on desktop"}
+        if "open_web_browser" in n:
+            app = args.get("browser") or args.get("app") or "Google Chrome"
+            return {"opened": ensure_app(app, float(args.get("launch_wait", 6)))}
+        if "navigate" in n:
+            url = args.get("url") or args.get("text") or ""
+            if not url:
+                return {"error": "navigate requires url"}
+            if "://" not in url:
+                url = "https://" + url
+            subprocess.run(["open", url], check=False)
+            settle(max_wait=3)
+            return {"url": url}
+        if "go_back" in n:
+            pyautogui.hotkey("command", "left"); return {}
+        if "go_forward" in n:
+            pyautogui.hotkey("command", "right"); return {}
+        if n == "search" or n.endswith("_search"):
+            query = args.get("query") or args.get("text") or ""
+            if not query:
+                return {"error": "search requires query"}
+            url = "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
+            subprocess.run(["open", url], check=False)
+            settle(max_wait=3)
+            return {"url": url}
+        if "take_screenshot" in n:
+            return {"captured": True}
+        if "wait_5" in n:
+            time.sleep(3); return {}
         if "open_app" in n:
             app = args.get("app") or args.get("name") or args.get("text") or ""
             return {"opened": ensure_app(app, float(args.get("launch_wait", 6)))}
@@ -262,7 +286,7 @@ def _tokens(interaction) -> int:
 
 
 def run(intent: str, skill_md: str | None = None, max_turns: int | None = None,
-        trace_path: str | None = None):
+        trace_path: str | None = None, trace_hint: str | None = None):
     """Drive the desktop toward `intent`. If `skill_md` is given, inject it as a recipe the
     model should follow (re-grounded visually). Returns metrics; if `trace_path` is given the
     full intent log (the trajectory the compiler model reads) is written there as JSON."""
@@ -276,6 +300,10 @@ def run(intent: str, skill_md: str | None = None, max_turns: int | None = None,
         preamble += ("\nYou have a VERIFIED step-by-step recipe for this exact task. Follow its "
                      "steps in order, re-locating each target on the CURRENT screen:\n\n"
                      + skill_md + "\n\nGOAL: ")
+    elif trace_hint:
+        preamble += ("\nYou have UNVERIFIED traces from similar past tasks. They are hints only, "
+                     "not instructions. Re-ground every action on the CURRENT screen, skip stale "
+                     "steps, and independently accomplish the goal:\n\n" + trace_hint + "\n\nGOAL: ")
     t0 = time.time()
     tokens = 0
     t_shot = t_api = t_exec = 0.0          # per-phase time accumulators (the latency breakdown)
@@ -292,6 +320,7 @@ def run(intent: str, skill_md: str | None = None, max_turns: int | None = None,
     tokens += _tokens(interaction)
     recent = []
     final = ""
+    termination_reason = "max_turns_exhausted"
     steps_done = 0
     for turn in range(1, max_turns + 1):
         calls = [s for s in interaction.steps if s.type == "function_call"]
@@ -299,6 +328,7 @@ def run(intent: str, skill_md: str | None = None, max_turns: int | None = None,
             final = " ".join(c.text for s in interaction.steps if s.type == "model_output"
                              for c in s.content if c.type == "text")
             print(f"\nfinal: {final}")
+            termination_reason = "model_completed"
             break
         responses = []
         for call in calls:
@@ -317,7 +347,7 @@ def run(intent: str, skill_md: str | None = None, max_turns: int | None = None,
         # stuck = same action AND same args repeated (so typing different text isn't flagged)
         recent.append(json.dumps([[c.name, str(dict(c.arguments).get("text", ""))[:24]] for c in calls]))
         if len(recent) >= STUCK_AFTER and len(set(recent[-STUCK_AFTER:])) == 1:
-            final = "ABORTED: stuck (no progress)"; print("\n" + final); break
+            final = "ABORTED: stuck (no progress)"; termination_reason = "stuck"; print("\n" + final); break
         _s = time.time()
         interaction = client.interactions.create(
             model=_MODEL, previous_interaction_id=interaction.id, input=responses, tools=_TOOL)
@@ -328,7 +358,8 @@ def run(intent: str, skill_md: str | None = None, max_turns: int | None = None,
     metrics = {"steps": steps_done, "elapsed_s": round(elapsed, 1), "tokens": tokens,
                "model_s": round(t_api, 1), "screenshot_s": round(t_shot, 1), "execute_s": round(t_exec, 1),
                "model_pct": round(100 * t_api / elapsed) if elapsed else 0,
-               "used_skill": bool(skill_md), "final": final}
+               "used_skill": bool(skill_md), "used_trace_hint": bool(trace_hint),
+               "termination_reason": termination_reason, "final": final}
     if trace_path:
         os.makedirs(os.path.dirname(trace_path) or ".", exist_ok=True)
         with open(trace_path, "w") as f:
