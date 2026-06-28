@@ -98,6 +98,8 @@ class BrowserExecutor:
         try:
             if op == "type":
                 text = args.get("text", "")
+                self.page.keyboard.press("ControlOrMeta+a")    # clear field first — portable (Ctrl on Linux/Win, Cmd on mac); cf. cold executor.execute_action("type")
+                self.page.keyboard.press("Backspace")
                 self.page.keyboard.type(text)
                 if args.get("press_enter") or args.get("enter"):
                     self.page.keyboard.press("Enter")
