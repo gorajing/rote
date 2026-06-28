@@ -47,6 +47,12 @@ NOTCH = NotchClient()
 _BUSY = {"skill": False}
 _DAEMON = None
 
+# Push-to-talk: hold a key to talk, otherwise the mic is muted. Opt-in via ROTE_PTT=1 — essential in
+# a loud room (a hackathon) where ambient speech keeps interrupting the agent. Key via ROTE_PTT_KEY
+# (a pynput Key name, default right shift).
+_PTT = os.getenv("ROTE_PTT", "").lower() in ("1", "true", "yes", "on")
+_PTT_KEY_NAME = os.getenv("ROTE_PTT_KEY", "shift_r")
+
 
 def _start_notch():
     """Spawn the notch daemon once and make sure it's torn down on exit."""
@@ -162,6 +168,12 @@ class RoteAssistant(Agent):
             "conversationally, like a friendly live demo, never robotic. No markdown, lists, or emojis.\n\n"
             f"Skills currently in the database (name: what it does):\n{listing}"
         ))
+
+    async def on_user_turn_completed(self, turn_ctx, new_message) -> None:
+        # In push-to-talk, a key tap with no speech commits an empty turn; don't reply to nothing.
+        if not (getattr(new_message, "text_content", "") or "").strip():
+            from livekit.agents.llm import StopResponse
+            raise StopResponse()
 
     @function_tool()
     async def database_get(self, context: RunContext, description: str) -> str:
@@ -396,6 +408,45 @@ def _wire_notch(session) -> None:
             NOTCH.send("error", title="Couldn't finish")
 
 
+def _setup_ptt(session) -> None:
+    """Hold-to-talk via a global hotkey (pynput). The mic stays muted until the key is held, so a
+    noisy room can't form a turn or interrupt the agent. Key-down: interrupt + start listening;
+    key-up: commit the turn. pynput callbacks run off-thread, so we marshal session calls back onto
+    the event loop with call_soon_threadsafe."""
+    try:
+        from pynput import keyboard
+    except Exception as exc:                          # pynput missing or no Input-Monitoring permission
+        print(f"[ROTE] push-to-talk unavailable ({exc}); falling back to open mic.", flush=True)
+        session.input.set_audio_enabled(True)
+        return
+    loop = asyncio.get_running_loop()
+    ptt_key = getattr(keyboard.Key, _PTT_KEY_NAME, keyboard.Key.shift_r)
+    state = {"talking": False}
+    session.input.set_audio_enabled(False)            # start muted
+    print(f"[ROTE] push-to-talk ON — hold '{_PTT_KEY_NAME}' to talk, release to send.", flush=True)
+
+    def _start():
+        session.interrupt(); session.clear_user_turn(); session.input.set_audio_enabled(True)
+        NOTCH.send("listening", title="Listening…")
+
+    def _end():
+        session.input.set_audio_enabled(False); session.commit_user_turn()
+
+    def on_press(key):
+        if key == ptt_key and not state["talking"] and not _BUSY["skill"]:
+            state["talking"] = True
+            loop.call_soon_threadsafe(_start)
+
+    def on_release(key):
+        if key == ptt_key and state["talking"]:
+            state["talking"] = False
+            loop.call_soon_threadsafe(_end)
+
+    listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+    listener.daemon = True
+    listener.start()
+
+
 server = AgentServer()
 
 
@@ -411,7 +462,8 @@ async def rote(ctx: agents.JobContext):
         tts=inference.TTS(model="cartesia/sonic-3",
                           voice="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"),
         turn_handling=TurnHandlingOptions(
-            turn_detection=inference.TurnDetector(),
+            # manual turn-taking when push-to-talk is on, so ambient room noise never forms a turn
+            turn_detection=("manual" if _PTT else inference.TurnDetector()),
             endpointing={"mode": "fixed", "min_delay": 0.2, "max_delay": 2.5},  # was 0.5 -> snappier
             preemptive_generation={"preemptive_tts": True},                     # start TTS early
         ),
@@ -419,9 +471,14 @@ async def rote(ctx: agents.JobContext):
     _start_notch()                                   # bring up the persistent notch companion
     _wire_notch(session)                             # forward listening/thinking/speaking + transcript
     await session.start(room=ctx.room, agent=RoteAssistant())
-    NOTCH.send("listening", title="Listening…")
+    if _PTT:
+        _setup_ptt(session)                          # hold-to-talk via global hotkey; mic muted otherwise
+    NOTCH.send("idle" if _PTT else "listening", title="Hold ⇧ to talk" if _PTT else "Listening…")
     # generate_reply is ignored on 3.1 live models, so greet with a direct spoken line
-    _say(session, "Hey, I'm Rote. Tell me a task and I'll run it on your Mac instantly.")
+    greeting = ("Hey, I'm Rote. Hold the shift key while you talk, then let go and I'll run it."
+                if _PTT else
+                "Hey, I'm Rote. Tell me a task and I'll run it on your Mac instantly.")
+    _say(session, greeting)
 
 
 if __name__ == "__main__":
