@@ -12,18 +12,43 @@ import re
 from google import genai
 
 from .config import CU_MODEL
+from .macro_skill import migrate_macro, validate_macro
 
 
 COMPILER_MODEL = os.getenv("ROTE_COMPILER_MODEL", CU_MODEL)
 
 SCHEMA = """You output ONLY a JSON object with this exact shape:
 {
+  "schema_version": 2,
   "name": "<short_snake_case_task_name>",
   "app": "<the macOS app driven, e.g. Microsoft Word>",
   "os": "macos",
+  "version": 1,
+  "parent_version": null,
+  "status": "active",
   "note": "<one line on what this macro does>",
   "params": { "<param>": "<value used>", ... },
-  "steps": [ { "op": "...", ...fields..., "why": "<short reason>" }, ... ]
+  "checker": {
+    "type": "word_docx",
+    "location": "{{location}}",
+    "filename": "{{filename}}.docx",
+    "contains": "{{text}}"
+  },
+  "stats": {"uses": 0, "successes": 0, "failures": 0, "success_rate": 0.0,
+            "avg_duration": 0.0, "model_calls": 0},
+  "steps": [
+    {
+      "id": "<stable_semantic_id>",
+      "op": "...",
+      "...op fields...": "...",
+      "precondition": {},
+      "postcondition": {},
+      "timeout": 3,
+      "retry_limit": 0,
+      "fallback": [],
+      "why": "<short reason>"
+    }
+  ]
 }
 
 Allowed step ops (keyboard-first -- avoid coordinate clicks):
@@ -45,7 +70,12 @@ NO screenshots and NO model calls. Rules:
 - Replace visual clicks with keyboard shortcuts wherever one exists: Command+N (new document),
   Command+S (save), Command+B (bold), Command+D (Desktop in the save dialog), Return (confirm).
 - DROP redundant or failed fumbles in the recording.
-- Keep the literal text the user asked to type, and the filename used.
+- Extract user-controlled values into params and reference them as {{text}}, {{filename}},
+  {{location}}, or another descriptive parameter. Never repeat those literals in steps.
+- Give every step a stable semantic id that will remain meaningful when nearby steps change.
+- Add deterministic preconditions and postconditions where macOS can inspect them. Supported
+  conditions are foreground_app, app_window, word_document, ui_text, dialog, and file_exists.
+- For Word output, add a word_docx checker that verifies the parameterized filename and content.
 - Never assume an app is open. Before interacting with any app, and whenever switching back to
   one, emit {"op":"open_app","app":"<Name>","launch_wait":6}. Do not add a separate wait after
   open_app, use Command+Tab, or click to switch apps.
@@ -81,7 +111,9 @@ def compile_macro(trace: dict) -> dict:
     )
     text = response.text.strip()
     text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
-    return json.loads(text)
+    macro = migrate_macro(json.loads(text))
+    validate_macro(macro)
+    return macro
 
 
 if __name__ == "__main__":
