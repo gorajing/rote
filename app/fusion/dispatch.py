@@ -133,7 +133,7 @@ def _escalate(executor: Executor, step: Step) -> dict:
 
 
 def replay(skill: FusedSkill, executor: Executor, verifier: Verifier, *,
-           threshold: float = MATCH_THRESHOLD) -> dict:
+           threshold: float = MATCH_THRESHOLD, on_step=None) -> dict:
     """Replay a FusedSkill surface-agnostically via the Executor + Verifier protocols.
 
     Per step, route by primitive to the cheapest tier (keyboard / crop / model), recording one
@@ -141,11 +141,22 @@ def replay(skill: FusedSkill, executor: Executor, verifier: Verifier, *,
     never self-reported. Forgiving: a failed action is recorded (ok=False) and replay continues;
     this function never raises.
 
+    If `on_step(i, total, cu_calls, StepResult)` is given it is called after each step — a live
+    hook for a HUD to narrate the running CU-call count and per-step tier.
+
     Returns {"cu_calls": int, "steps": [StepResult, ...], "verified": bool,
              "needs_recompile": bool}.
     """
     results: list[StepResult] = []
     cu_calls = 0
+
+    def _emit(sr: StepResult):
+        results.append(sr)
+        if on_step:
+            try:
+                on_step(i, len(skill.steps), cu_calls, sr)
+            except Exception:
+                pass
 
     for i, step in enumerate(skill.steps):
         primitive = step.primitive
@@ -164,15 +175,15 @@ def replay(skill: FusedSkill, executor: Executor, verifier: Verifier, *,
                     if score < threshold:
                         res = _escalate(executor, step)
                         cu_calls += 1
-                        results.append(StepResult(index=i, primitive=primitive, tier="model",
+                        _emit(StepResult(index=i, primitive=primitive, tier="model",
                                                   cu_calls=1, score=score, ok=_ok(res)))
                         continue
                     out = executor.fire_keyboard(primitive, step.args)
-                    results.append(StepResult(index=i, primitive=primitive, tier="keyboard",
+                    _emit(StepResult(index=i, primitive=primitive, tier="keyboard",
                                               cu_calls=0, score=score, ok=_ok(out)))
                 else:
                     out = executor.fire_keyboard(primitive, step.args)
-                    results.append(StepResult(index=i, primitive=primitive, tier="keyboard",
+                    _emit(StepResult(index=i, primitive=primitive, tier="keyboard",
                                               cu_calls=0, ok=_ok(out)))
 
             elif primitive in SPATIAL_OPS:
@@ -182,29 +193,29 @@ def replay(skill: FusedSkill, executor: Executor, verifier: Verifier, *,
                     nx, ny, score = _localize(executor.screenshot(), crop)
                     if score >= threshold:
                         out = executor.click_at(nx, ny, primitive, step.args)
-                        results.append(StepResult(index=i, primitive=primitive, tier="crop",
+                        _emit(StepResult(index=i, primitive=primitive, tier="crop",
                                                   cu_calls=0, score=score, ok=_ok(out)))
                     else:
                         res = _escalate(executor, step)
                         cu_calls += 1
-                        results.append(StepResult(index=i, primitive=primitive, tier="model",
+                        _emit(StepResult(index=i, primitive=primitive, tier="model",
                                                   cu_calls=1, score=score, ok=_ok(res)))
                 else:
                     res = _escalate(executor, step)
                     cu_calls += 1
-                    results.append(StepResult(index=i, primitive=primitive, tier="model",
+                    _emit(StepResult(index=i, primitive=primitive, tier="model",
                                               cu_calls=1, ok=_ok(res)))
 
             else:
                 # MODEL_OP (or any unlowered primitive): last resort, one CU call.
                 res = _escalate(executor, step)
                 cu_calls += 1
-                results.append(StepResult(index=i, primitive=primitive, tier="model",
+                _emit(StepResult(index=i, primitive=primitive, tier="model",
                                           cu_calls=1, ok=_ok(res)))
         except Exception:
             # Forgiving spine: never raise on a failed action. Record it and move on; the Verifier
             # still has the final say on whether the skill's goal was actually achieved.
-            results.append(StepResult(index=i, primitive=primitive,
+            _emit(StepResult(index=i, primitive=primitive,
                                       tier=_tier_for(primitive), ok=False))
 
     # Ground-truth gate. Fail CLOSED: an unverifiable run is not a success.
