@@ -1,0 +1,111 @@
+{
+  "name": "create_word_meeting_notes",
+  "app": "Microsoft Word",
+  "os": "macos",
+  "note": "Creates a formatted Word document with meeting notes and saves it to the Desktop.",
+  "params": {},
+  "steps": [
+    {
+      "op": "open_app",
+      "app": "Microsoft Word",
+      "why": "Launch Microsoft Word"
+    },
+    {
+      "op": "wait",
+      "seconds": 6,
+      "why": "Wait for Microsoft Word to open"
+    },
+    {
+      "op": "key",
+      "key": "return",
+      "why": "Select Blank Document from template chooser"
+    },
+    {
+      "op": "wait",
+      "seconds": 2,
+      "why": "Wait for the blank document to load"
+    },
+    {
+      "op": "hotkey",
+      "keys": [
+        "command",
+        "b"
+      ],
+      "why": "Turn on bold styling"
+    },
+    {
+      "op": "type",
+      "text": "Rote Meeting Notes",
+      "why": "Type the document title"
+    },
+    {
+      "op": "key",
+      "key": "return",
+      "why": "Create a new paragraph"
+    },
+    {
+      "op": "hotkey",
+      "keys": [
+        "command",
+        "b"
+      ],
+      "why": "Turn off bold styling"
+    },
+    {
+      "op": "type",
+      "text": "Computer use is slow because of model latency.",
+      "why": "Type the first note line"
+    },
+    {
+      "op": "key",
+      "key": "return",
+      "why": "Create another new line"
+    },
+    {
+      "op": "type",
+      "text": "Compiled skills replay with no model calls.",
+      "why": "Type the second note line"
+    },
+    {
+      "op": "hotkey",
+      "keys": [
+        "command",
+        "s"
+      ],
+      "why": "Trigger Save As dialog"
+    },
+    {
+      "op": "wait",
+      "seconds": 2,
+      "why": "Wait for the save dialog to appear"
+    },
+    {
+      "op": "hotkey",
+      "keys": [
+        "command",
+        "d"
+      ],
+      "why": "Set the save destination to Desktop"
+    },
+    {
+      "op": "wait",
+      "seconds": 1,
+      "why": "Wait for directory change to complete"
+    },
+    {
+      "op": "type",
+      "text": "meeting_notes",
+      "why": "Enter the filename"
+    },
+    {
+      "op": "key",
+      "key": "return",
+      "why": "Confirm save"
+    },
+    {
+      "op": "wait",
+      "seconds": 2,
+      "why": "Wait for file save process to finish"
+    }
+  ]
+}
