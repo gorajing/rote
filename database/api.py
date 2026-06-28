@@ -106,7 +106,12 @@ def _collection() -> Collection:
     if _mongo_client is None:
         if not config.MONGO_URI:
             raise RuntimeError("ROTE_MONGO_URI is not set in environment")
-        _mongo_client = MongoClient(config.MONGO_URI)
+        _mongo_client = MongoClient(
+            config.MONGO_URI,
+            serverSelectionTimeoutMS=5000,
+            connectTimeoutMS=5000,
+            socketTimeoutMS=10000,
+        )
     return _mongo_client[config.DB_NAME][config.INSTRUCTIONS_COLLECTION]
 
 
@@ -131,20 +136,27 @@ def push_many(docs: list[dict]) -> list[str]:
     return [push(doc) for doc in docs]
 
 
-def retrieve(search_text: str, top_k: int = 5) -> list[dict]:
+def retrieve(search_text: str, top_k: int = 5, filters: Optional[dict] = None) -> list[dict]:
     """Return documents ordered by Atlas vector-search similarity."""
+    if not isinstance(search_text, str) or not search_text.strip():
+        raise ValueError("search_text must be a non-empty string")
     if top_k < 1:
         raise ValueError("top_k must be at least 1")
+    if top_k > 50:
+        raise ValueError("top_k must not exceed 50")
+    vector_search = {
+        "index": _VECTOR_INDEX,
+        "path": _VECTOR_PATH,
+        "queryVector": _embed(search_text),
+        "numCandidates": max(100, top_k * 10),
+        "limit": top_k,
+    }
+    if filters:
+        clauses = [{key: value} for key, value in filters.items() if value is not None]
+        if clauses:
+            vector_search["filter"] = clauses[0] if len(clauses) == 1 else {"$and": clauses}
     pipeline = [
-        {
-            "$vectorSearch": {
-                "index": _VECTOR_INDEX,
-                "path": _VECTOR_PATH,
-                "queryVector": _embed(search_text),
-                "numCandidates": max(100, top_k * 10),
-                "limit": top_k,
-            }
-        },
+        {"$vectorSearch": vector_search},
         {"$addFields": {"score": {"$meta": "vectorSearchScore"}}},
         {"$project": {_VECTOR_PATH: 0}},
     ]

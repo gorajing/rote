@@ -138,7 +138,8 @@ A flat list of steps replayed top to bottom. Ops:
 | `app/runner.py` | ✅ | browser entry point / smoke test |
 | `app/trace.py` | ✅ | trajectory recorder |
 | **Not built yet** | | |
-| Atlas registry sync, desktop eval fleet, `mcp_server` | ⛔ todo | local versioned registry and repair are implemented; remote sharing remains |
+| Atlas registry sync, desktop eval fleet | ⛔ todo | Atlas search descriptors are supported; remote executable registry remains |
+| `app/mcp_server.py` | ✅ | FastMCP stdio server for desktop skill search, inspection, and verified replay |
 
 ---
 
@@ -165,6 +166,36 @@ python3 -m app.desktop_cu --probe
 ```bash
 python -m app.runner --url https://www.google.com --intent "Search for 'Gemini API'."
 ```
+
+### FastMCP server
+
+The MCP server uses MongoDB Atlas for semantic discovery and the local versioned registry as the
+source of executable macros. Index active desktop skills explicitly, then configure an MCP client
+to launch the stdio server:
+
+```bash
+python -m app.skill_search_index --dry-run   # inspect descriptors without writing Atlas
+python -m app.skill_search_index             # embed and upsert descriptors in Atlas
+python -m app.mcp_server                     # stdio server (normally launched by the MCP client)
+```
+
+Example client configuration (use absolute paths on your machine):
+
+```json
+{
+  "mcpServers": {
+    "rote": {
+      "command": "/absolute/path/to/rote/.venv/bin/python",
+      "args": ["-m", "app.mcp_server"],
+      "cwd": "/absolute/path/to/rote"
+    }
+  }
+}
+```
+
+The Atlas Vector Search index `description` must index `embedding` as the vector field and
+`doc_type`, `surface`, `status`, `checker_verified`, and `app` as filter fields. Desktop replay
+controls the real keyboard and mouse and therefore requires `confirm_execution=true` on every call.
 
 ⚠️ The desktop track moves your real mouse and keyboard. Keep hands off while it runs; slam the mouse into a screen corner to abort (pyautogui failsafe).
 
