@@ -71,6 +71,27 @@ def _localize(shot_bytes: bytes, crop_b64: str):
         return 0, 0, 0.0
 
 
+CROP_W, CROP_H = 160, 90   # healed-crop box (matches app.skill_compiler's target-crop size)
+
+
+def _extract_crop(shot_bytes: bytes, nx: int, ny: int):
+    """Re-cut a fresh target crop centred on NORMALIZED coords from a screenshot -> b64 PNG. After a
+    crop MISS escalates to CU and the model relocates the target, this captures the crop at the
+    model's coords so the NEXT replay matches it at 0 CU — the durable half of self-heal. None on
+    any decode/shape error (-> heal simply not persisted, never raises)."""
+    try:
+        shot = cv2.imdecode(np.frombuffer(shot_bytes, np.uint8), cv2.IMREAD_COLOR)
+        h, w = shot.shape[:2]
+        cx, cy = int(nx / COORD_MAX * w), int(ny / COORD_MAX * h)
+        x0 = max(0, min(cx - CROP_W // 2, w - CROP_W))
+        y0 = max(0, min(cy - CROP_H // 2, h - CROP_H))
+        crop = shot[y0:y0 + CROP_H, x0:x0 + CROP_W]
+        ok, buf = cv2.imencode(".png", crop)
+        return base64.b64encode(buf).decode() if ok else None
+    except Exception:
+        return None
+
+
 # Gemini CU action names -> the two executor primitives. The contract narrows every surface to
 # click/drag (spatial) + open_app/hotkey/key/type/wait (keyboard); when self-healing a single
 # step we fold the model's richer action space down onto that floor.
@@ -126,14 +147,20 @@ def _escalate(executor: Executor, step: Step) -> dict:
         )
         for s in interaction.steps:
             if s.type == "function_call":
-                return _apply_cu_action(executor, s.name, dict(s.arguments))
+                args = dict(s.arguments)
+                res = _apply_cu_action(executor, s.name, args)
+                # carry the re-grounded pointer coords + the pre-action shot so replay() can re-cut
+                # the crop and persist the heal (only consumed when heal=True AND the run verifies).
+                coords = ((int(args["x"]), int(args["y"]))
+                          if (s.name in _POINTER and "x" in args and "y" in args) else None)
+                return {**res, "_heal_coords": coords, "_heal_shot": shot_bytes}
         return {"ok": False, "error": "model returned no action"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 def replay(skill: FusedSkill, executor: Executor, verifier: Verifier, *,
-           threshold: float = MATCH_THRESHOLD, on_step=None) -> dict:
+           threshold: float = MATCH_THRESHOLD, on_step=None, heal: bool = False) -> dict:
     """Replay a FusedSkill surface-agnostically via the Executor + Verifier protocols.
 
     Per step, route by primitive to the cheapest tier (keyboard / crop / model), recording one
@@ -144,11 +171,18 @@ def replay(skill: FusedSkill, executor: Executor, verifier: Verifier, *,
     If `on_step(i, total, cu_calls, StepResult)` is given it is called after each step — a live
     hook for a HUD to narrate the running CU-call count and per-step tier.
 
+    heal=True (opt-in; default False keeps behaviour identical): when a spatial step's crop MISSES
+    and the one-step CU escalation re-grounds the target, the step's crop is re-cut at the new
+    location — but APPLIED to the skill (in place) only if the whole run re-VERIFIES, so a heal that
+    didn't achieve the goal never poisons the stored skill. The caller persists a new version to
+    make the next replay match at 0 CU (durable self-improvement).
+
     Returns {"cu_calls": int, "steps": [StepResult, ...], "verified": bool,
-             "needs_recompile": bool}.
+             "needs_recompile": bool, "healed": [int]}.
     """
     results: list[StepResult] = []
     cu_calls = 0
+    pending_heals: dict[int, str] = {}
 
     def _emit(sr: StepResult):
         results.append(sr)
@@ -198,6 +232,10 @@ def replay(skill: FusedSkill, executor: Executor, verifier: Verifier, *,
                     else:
                         res = _escalate(executor, step)
                         cu_calls += 1
+                        if heal and _ok(res) and res.get("_heal_coords") and step.pre is not None:
+                            fresh = _extract_crop(res["_heal_shot"], *res["_heal_coords"])
+                            if fresh:
+                                pending_heals[i] = fresh   # applied later iff the whole run verifies
                         _emit(StepResult(index=i, primitive=primitive, tier="model",
                                                   cu_calls=1, score=score, ok=_ok(res)))
                 else:
@@ -224,9 +262,19 @@ def replay(skill: FusedSkill, executor: Executor, verifier: Verifier, *,
     except Exception:
         verified = False
 
+    # Persist the self-heal ONLY when the whole run re-VERIFIED — a re-ground that didn't achieve
+    # the goal must never poison the stored skill. The caller saves a new version from these crops.
+    healed: list[int] = []
+    if heal and verified and pending_heals:
+        for idx, fresh in pending_heals.items():
+            if skill.steps[idx].pre is not None:
+                skill.steps[idx].pre.crop_b64 = fresh
+        healed = sorted(pending_heals)
+
     return {
         "cu_calls": cu_calls,
         "steps": results,
         "verified": verified,
         "needs_recompile": not verified,
+        "healed": healed,
     }
