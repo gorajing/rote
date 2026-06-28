@@ -55,4 +55,10 @@ def make_verifier(skill: FusedSkill):
     kind = (skill.verify or {}).get("kind", "checker")
     if kind in ("docx", "file", "artifact"):
         return ArtifactVerifier()
+    if kind == "clipboard":
+        from .world_verifiers import ClipboardVerifier
+        return ClipboardVerifier()
+    if kind == "textedit":
+        from .world_verifiers import TextEditVerifier
+        return TextEditVerifier()
     return CheckerVerifier()

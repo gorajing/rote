@@ -139,14 +139,18 @@ def replay_verified(
     registry: LocalSkillRegistry | None = None,
     repair_service=None,
     on_event: Callable[[str, dict], None] | None = None,
-    optimistic: bool = True,
+    optimistic: bool = False,
 ) -> dict:
     """Replay and verify a macro. Repair is delegated once when explicitly enabled.
 
-    optimistic=True (default): a learned skill replays blind and fast — execute every step with
-    dynamic waits and NO per-step desktop inspection, then verify ONCE with the final checker.
-    The slow per-step verification runs only to DIAGNOSE a real failure (and only when repair is
-    requested). A healthy skill therefore replays at full speed."""
+    Default (optimistic=False) is the VERIFIED contract: per-step pre/postconditions, retry and
+    fallback accounting, stop-at-failed-step, and a final check against live desktop state. Every
+    self-improvement / repair / validation caller depends on this — do NOT change the default.
+
+    optimistic=True is an OPT-IN happy-path speedup for user-facing replay (voice HUD, plain
+    --replay): execute every step blind with dynamic waits and NO per-step inspection, then verify
+    ONCE with the final checker. The slow per-step verification still runs to DIAGNOSE a real
+    failure, but only when repair is also requested. A healthy skill replays at full speed."""
     started = time.time()
     skill = migrate_macro(skill)
     params = {**skill.get("params", {}), **(params or {})}

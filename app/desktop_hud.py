@@ -65,6 +65,7 @@ def main():
             macro, params=overrides, allow_repair=a.repair, registry=registry,
             repair_service=RepairService(registry) if a.repair else None,
             on_event=event,
+            optimistic=not a.repair,   # fast blind replay for voice; verified per-step when self-healing
         )
         hud.finish("Done ✓" if result["success"] else "Verification failed")
 

@@ -1,54 +1,49 @@
-# Rote — Build Plan v2 (post-reassessment pivot)
+# Rote — Shipped State (supersedes the v2 browser-crop plan)
 
-> **Why this changed:** Gemini 3.5 CU is so capable + re-grounds visually every step that the original demo (a climbing success curve + a cosmetic self-heal) is **flat on a clean app and fakeable on a hard one**, and the one unfakeable win didn't exist in code. The architecture is sound — the **demo centerpiece pivots** to the single thing raw CU can't reproduce or fake. (See "What's kept" at the bottom.)
+> **What this is now:** this file used to be the full build plan, centered on a **browser-only target-crop demo**. The project pivoted twice past it. It's now a record of what actually shipped. **For the full, current detail see [`README.md`](../README.md).** The original plan survives only as a labeled *History* note at the bottom.
 
 ## Concept — "CU is the teacher and the healer; Rote makes its intelligence amortizable and durable."
-Gemini 3.5 CU does the hard zero-shot grounding once. Rote **compiles that into a verified skill** (success-gated by a deterministic checker) and **replays it with ZERO CU calls** — and when the UI drifts, escalates a single step back to CU to re-ground and patch the skill. The system gets **cheaper AND more robust** with experience. Theme: Continual Learning. Target: Best Use of Gemini CU ($5000).
+Gemini 3.5 CU does the hard zero-shot grounding once. Rote **compiles that into a verified skill** (success-gated by a deterministic checker reading ground truth) and **replays it with ZERO CU calls** — and when the UI drifts, escalates a single step back to CU to re-ground and patch the skill. The system gets **cheaper AND more robust** with experience. Theme: Continual Learning. Target: Best Use of Gemini CU.
 
 ## The unfakeable centerpiece — the CU-call collapse
-Headline metric = **CU model calls (+ $ + latency)**, live HUD: **"CU calls: 8 → 0 (verified replay)."** The only number raw gemini-3.5-CU can never reproduce and a judge cannot fake. NOT the success curve (saturates on a capable model + reads as hand-tuned).
-
-**Enabling compiler change:** `compile_skill` KEEPS each step's executed **action + a small target-crop** of the pre-action screenshot (both already in `Step`) as a **visual precondition**, alongside the semantic `target_desc`. On replay: cheap non-CU re-localize → hit ⇒ execute the cached action (0 CU calls); miss (UI drift) ⇒ escalate that ONE step to CU + patch the skill. Self-heal is the SAME engine's escalation path — provably not blind coordinate replay. Floor if the per-step gate is flaky: one verify CU call per skill (N→1) — still unfakeable; report the REAL measured number, never a hoped-for 0.
+Headline metric = **CU model calls (+ $ + latency)**, verified by ground truth: **"CU calls: N → 0 (verified replay)."** The one number raw gemini-3.5-CU can never reproduce and a judge cannot fake. NOT a success curve (it saturates on a capable model and reads as hand-tuned).
 
 ## Integrity spine — success-gated memory
 `Trajectory.success` is filled ONLY by the deterministic checker reading `/state`, NEVER the model. Pitch against the literature: ~52–59% of competitors' "success"-labeled memory came from FAILED self-reported runs → memory that rots. Rote's checker-gated induction = memory that doesn't.
 
-## Frozen contracts → `app/schemas.py` (do not change without telling all of us)
-`Task` · `Step` (per-step `intent` + `coords` + `screenshot_path`) · `Trajectory` (`success` = checker only) · `Skill` (now also caches per-step action + target-crop as a visual precondition).
+## Shipped today
+Three tracks, all replaying at **0 CU** and verified against ground truth.
 
-## The arena MUST be hard for zero-shot (not clean)
-Clean app → zero-shot ~100% → flat curve → no demo. Build deterministic-checkable AND hard: hidden/overflow nav (Dispute behind "⋯ More"), a required pre-filter before the row exists, a required sub-step (reason dropdown in a modal), a decoy control, long conditional row-selection. **GO/NO-GO: zero-shot base success measurably < ~70%, steps ~2–3× the skilled path** (measured by `skill_inject_check.py` at H6).
+### 1) Desktop macro pipeline (macOS, condition-checked)
+`app/desktop_cu.py` (the doer) → `app/desktop_skill_compiler.py` + `app/universal_skill_compiler.py` (a 2nd Gemini pass compiles the trajectory into a macro) → `app/verified_replay.py` (per-step pre/postconditions, retries, fallbacks; drives the **real desktop** via `pyautogui`). Localized repair via `app/skill_repair.py`; versioned local promotion via `app/local_skill_registry.py`. Notch HUD (`app/notch.py` + `app/desktop_hud.py`) and voice runner (`app/voice_agent.py`).
+- **Optimistic replay is opt-in.** `replay_verified(..., optimistic=False)` is the default verified per-step contract; `optimistic=True` is the blind happy-path speedup, opted in only at the call sites (`desktop_hud.py`: `optimistic=not a.repair`; `desktop_cu.replay`: `optimistic=True`). PR #9 ("make optimistic replay opt-in") is **merged to main**.
 
-## The hero — structural-mutation, three bars: "a stale skill is WORSE than no skill"
-1. zero-shot (no skill) **PASS** on the mutated UI → control proving the model + task are fine.
-2. inject the **STALE** skill → confident-but-wrong recipe anchors past a now-required step → real circuit-breaker **FAIL** (red X).
-3. **repair** (precondition/landmark miss → re-compile the shortcut) → **PASS** in fewer steps.
-Mutation must be STRUCTURAL (move Dispute behind the overflow + add a required reason dropdown), never cosmetic. NEVER wire "naive replay" to offline coord-firing — that's literally RPA.
+### 2) Surface-agnostic fusion engine (`app/fusion/*`)
+One tiered dispatcher replays a compiled `FusedSkill` across **browser and desktop**, routing each step to the cheapest tier that reproduces it: **keyboard** (fire the shortcut blind, 0 perception) → **crop** (re-localize the step's visual precondition with a template match, 0 model) → **model** (escalate exactly ONE step to CU on drift = the self-heal). Files: `contract.py` (the `FusedSkill` + `Verifier` spine), `dispatch.py` (the tiered dispatcher), `compiler.py` (trajectory → `FusedSkill`), `skill_store.py` (persist + promote skills across runs), `recall.py` (plain-language intent → recall → 0-CU replay, **local-first**), `hybrid.py` (learned cross-surface web→Mac-app skills). Every step is gated by a ground-truth `Verifier`.
 
-## Owner tasks (post-pivot)
-- **A + B — Jin (+ Claude): the engine + skill core + replay.** CU loop (done), `run_episode` (done); **`compile_skill`** (Trajectory → Skill, caches action+crop, success-gated); **the verified deterministic-replay engine** (0-CU-call replay + single-step CU escalation = unified self-heal); the `skill_inject_check` go/no-go.
-- **Atlas registry — Riccardo:** store/retrieve/dedup `Skill`s in MongoDB Atlas (vector retrieval by task embedding), conformed to the `Skill` schema. (His `query` db work re-points here.)
-- **C — ikjun: the HARD arena + checker + eval.** AcmeBilling (hard, per above), deterministic `check_task`, structural mutations via `/reset?mutation=`, 15–20 held-out variants, `eval_harness`.
-- **D — demo + pitch.** The live "CU calls" HUD, the three-bar hero, a secondary same-family success panel, the pitch ("teacher and healer" + success-gated memory), the offline replay fallback, the MiniMax/MCP closing vision.
+### 3) Browser arena + 11-task eval
+`app/controlled_app/` — **AcmeBilling**, a deterministic Flask app at `http://localhost:8800` with a `/state` snapshot endpoint and `/reset?variant=…` for structural UI mutations. `app/tasks.py` — **6 train + 5 held-out** across **three families** (`invoice_action`, `row_find_act`, `settings_change`). `app/checker.py` — deterministic checkers (`dispute_workflow`, `row_find_act`, `settings_change`) read `/state`, so "success" is never self-reported. `app/eval_harness.py` — skills-off ablation / UI-mutation / repair eval.
+- **Metric, honest:** CU **N → 0**, verified by ground truth. On the fusion engine across the bank, the **refund** and **settings** families generalize cleanly (train → held-out, 0 CU, verified); the long modal-heavy **dispute** workflow is the honest hard frontier (crop drift → self-heal escalation).
 
-## Checkpoints
-- **H6 — GO/NO-GO:** run `skill_inject_check.py` on the hard arena. Require zero-shot base < ~70% AND large positive Δsteps/Δsuccess from a compiled skill. Inject a mismatched skill → confirm no DIP (gate retrieval by similarity if it does). If Δ≈0, the curve is dead → lead on the CU-call collapse + hero only.
-- **H10:** verified deterministic replay working → live "CU calls: N → 0" on a held-out task.
-- **H14:** structural-mutation hero (zero-shot PASS / stale FAIL / repaired PASS) pre-vetted on 2–3 mutations.
-- **H18:** secondary success panel (same-family held-out) + Atlas registry live.
-- **H22:** full arc on the stage laptop + offline replay fallback; MiniMax/MCP beat if core solid.
-- **H22–24:** freeze, record VO, 2 dry runs, submission video.
+Reproduce (canonical commands in [`README.md`](../README.md)):
+```bash
+python -m app.controlled_app.server          # arena on :8800
+```
 
-## Risk register (re-ordered post-pivot)
-1. **Flat curve / decorative skill (the #1 threat)** → arena MUST be hard (zero-shot < 70%); gate on `skill_inject_check` at H6; if flat, lead on the CU-call collapse + hero (both survive saturation).
-2. **Contrived self-heal** → structural mutation only; zero-shot control proves the task; route the FAIL through the real circuit breaker; pre-vet 2–3, run the most reliable live.
-3. **"It's RPA"** → replay is gated on a visual precondition + escalates to CU on drift; never fire stored coords blindly; show CU re-grounding live on the heal.
-4. **Non-monotonic ablation** → untested retrieval can DIP; gate retrieval by a similarity threshold; test a mismatched skill.
-5. **Preview model** → `USE_LEGACY_CU` swap; pre-recorded backup. (Interactions API is GA.)
-6. **Wifi/API dies on stage** → offline `replay.py` + recorded VO; `/reset` before each scored task.
+## Frozen contracts (two — do not change a field without telling everyone)
+- `app/schemas.py` — the browser/desktop **Trajectory spine**: `Task` (`checker` = key into `checker.CHECKERS`) · `Step` · `Trajectory` (`success` = checker only, NEVER the model) · `Skill`.
+- `app/fusion/contract.py` — the fusion **`FusedSkill`**: typed `Step`s each with a `Precondition`, plus a `Verifier` spec decided against GROUND TRUTH.
 
-## Demo (3 min) — CU stars live, twice
-problem + "teacher and healer" → CU grounds a genuinely-hard task **zero-shot, live** (CU brilliant) → compile a verified skill (Atlas row appears) → **verified replay: "CU calls 8 → 0"** (the unfakeable money shot) → structural UI mutation → **stale skill FAILS** (red X) while **zero-shot PASSES** (control) → CU **re-grounds + repairs** the skill live → **PASS in fewer steps** → [secondary] same-family held-out success panel + the success-gated-memory integrity line → MiniMax pulls the skill over MCP (closing vision).
+## Arena facts (corrected)
+- Reset / mutate routes: **`POST /reset?variant=<name>`** and **`GET /mutate/<name>`** — *not* `/reset?mutation=…`.
+- Variants: `baseline`, `move_dispute_to_cases`, `relabel_export`.
+- The structural mutation is **`move_dispute_to_cases`**: the "Mark Disputed" action is relocated to a separate **Cases** page (`/cases/dispute/<id>`) — the self-heal stress test. The **reason dropdown is baseline** (present in every variant) — it is *not* a mutation.
+- Split: **6 train / 5 held-out**, three families.
 
-## What's KEPT (most of the build)
-GA CU loop, `run_episode` + persistence, the success-gated `Trajectory` contract, semantic re-grounded skills, Atlas storage, calibration, the fixture, `skill_inject_check` (now the go/no-go gate). The pivot is the **centerpiece metric + arena difficulty + the cache-action-crop compiler change** — not a rewrite.
+## Not built / mock (do NOT claim as working integrations)
+- **Atlas registry** (`database/api.py` + `data/`) — **mock/seed entries only**, an *optional* cross-agent skill share. Recall is **local-first** and does not depend on it. (The runtime `database/skills/registry/` is **gitignored by design**; the canonical seed skills `database/skills/*.macro.json` are tracked.)
+- **MCP / MiniMax** closing-vision beat — not built.
+- **`eval_harness.py` compile / store / repair paths** are **stubs** (`_compile_successes`, the `repair_library` branch) — guarded imports that no-op when the module isn't present.
+
+## History — the original v2 plan (superseded)
+The pre-pivot centerpiece was a **browser-only** demo: `compile_skill` caching a per-step **target-crop** as a visual precondition, a three-bar "a stale skill is WORSE than no skill" hero on a single hard AcmeBilling task, an Atlas row appearing live, and a MiniMax-over-MCP closing beat. The **crop-grounding idea survived and generalized** into the fusion engine's crop tier (now surface-agnostic — browser **and** desktop); the single-task browser hero and the live-Atlas / MCP beats did not ship as the centerpiece. The metric that endured is the **CU-call collapse (N → 0, ground-truth-verified)**.

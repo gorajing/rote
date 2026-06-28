@@ -1,123 +1,151 @@
 # Rote
 
-**A Gemini 3.5 Computer Use agent that learns reliable computer skills by doing — then replays them with no model in the loop, and repairs them when the UI changes.**
+**A Gemini 3.5 Computer Use agent that learns reliable computer skills by doing — then replays them with no model in the loop, recalls them by plain-language intent, and repairs them when the UI changes.**
 
-Computer-use agents are powerful but amnesiac and slow: every run is disposable, and every step is a multi-second round-trip to a vision model. Rote watches **Gemini 3.5 Flash** operate a real computer, **compiles the successful run into a reusable keyboard-first skill** (authored by a second Gemini pass — not by hand), and then **replays that skill deterministically with zero model calls** — ~8× faster and free. When a step drifts, it falls back to the model to self-heal.
+Computer-use agents are powerful but amnesiac and slow: every run is disposable, and every step is a multi-second round-trip to a vision model. Rote watches **Gemini 3.5 Flash** operate a real computer, **compiles the successful run into a reusable, keyboard-first / crop-grounded skill** (authored by a second Gemini pass — not by hand), then **replays that skill deterministically with zero model calls**. When a step drifts, it falls back to the model to self-heal one step; when you ask for something in plain words, it **recalls** the skill it already learned.
 
 > AI Engineer World's Fair Hackathon 2026 · Theme: **Continual Learning** · Target: **Best Use of Gemini Computer Use**
 
-> 🎙️ **Talk to it.** A LiveKit voice agent runs these skills by voice and narrates live:
-> `python3 -m app.voice_agent console` then say *"calculate 52 times 68 and save it in Word."*
-> What's new on the `feat/v0.1` branch (voice + optimistic replay + fixes) is summarized in
-> **[docs/feat-v0.1-notes.md](docs/feat-v0.1-notes.md)** — start there.
+## The loop
 
-## The idea in one loop
 ```
-computer-use run  →  intent log  →  Gemini compiles a macro  →  deterministic replay  →  (drift → self-heal)
-   slow, model            the trajectory      a 2nd Gemini pass         fast, NO model, NO tokens
+do it once (Gemini CU)  →  compile (2nd Gemini pass)  →  replay 0-CU, verified  →  drift? self-heal 1 step
+   slow, model              the trajectory → a skill       fast, NO model calls       recall by intent next time
 ```
 
 Two models, two roles:
 - **The doer** — Gemini 3.5 Flash drives the computer from screenshots and leaves an annotated **intent log** (`intent → action → coords`, each `intent` is the model's own per-step reasoning).
-- **The compiler** — a second Gemini 3.5 pass reads that log and **writes a keyboard-first replay macro**: it drops fumbles, swaps visual clicks for shortcuts (`Cmd+N`, `Cmd+S`, `Cmd+B`, `Cmd+D`), and launches apps reliably. Replaying that macro needs **no screenshots and no model calls**.
+- **The compiler** — a second Gemini 3.5 pass reads that log and writes a replayable skill: keyboard shortcuts where it can, a small **target-crop** per spatial step so replay re-localizes the pixel model-free. Replaying needs **no screenshots and no model calls** — and success is decided by a deterministic **checker reading ground truth**, never the model's self-report.
 
 ---
 
-## ✅ What works right now — the macOS desktop pipeline
+## Two replay engines
 
-This is the part that runs end-to-end today. It drives the **real macOS desktop** (not a browser) via `pyautogui`, and has produced real `.docx` files, formatted documents, and a multi-app Calculator→clipboard→Word flow.
+Rote ships two engines that share this philosophy; both replay at 0 CU and verify against ground truth.
 
-### Stage 1 — record (the doer)
+1. **Verified-macro engine** (`app/verified_replay.py`) — desktop macOS macros with per-step pre/postconditions, retries, fallbacks, and localized repair. Drives the **real desktop** via `pyautogui`. Replay defaults to the verified per-step contract; `optimistic` blind-fast replay is **opt-in** (voice HUD / plain `--replay`).
+2. **Fusion engine** (`app/fusion/`) — a **surface-agnostic** tiered dispatcher that replays a compiled `FusedSkill` by routing each step to the cheapest tier that reproduces it:
+   - **keyboard** → fire the shortcut blind (0 perception),
+   - **crop** → re-localize the step's visual precondition with a template match (0 model),
+   - **model** → escalate exactly one step to Gemini CU on drift (the self-heal).
+   The same dispatcher serves **browser and desktop**, gated by a ground-truth `Verifier`.
+
+---
+
+## The browser arena + evaluation
+
+A hard, deterministic **controlled web app** to measure the engine honestly.
+
+- **AcmeBilling arena** (`app/controlled_app/`) — a Flask app at `http://localhost:8800` with a `/state` snapshot endpoint and `/reset?variant=…` for structural UI mutations (e.g. `move_dispute_to_cases` relocates an action behind a Cases page — the self-heal stress test).
+- **11-task bank** (`app/tasks.py`) — 6 train + 5 held-out across **three families**: `invoice_action` (a multi-step dispute workflow), `row_find_act` (filter → find → refund), `settings_change`.
+- **Deterministic checkers** (`app/checker.py`) read `/state` — `dispute_workflow`, `row_find_act`, `settings_change` — so "success" is never self-reported.
+- **Eval harness** (`app/eval_harness.py`) — skills-off ablation, UI-mutation variants, repair-eval.
+
+**The headline metric is unfakeable: CU calls N → 0, verified by ground truth.** On the fusion engine across the bank, the **refund** and **settings** families generalize cleanly (train → held-out, **0 CU, verified**); the long modal-heavy **dispute** workflows are the honest hard frontier (crop drift → self-heal escalation). Reproduce with:
+
 ```bash
-python3 -m app.desktop_cu \
-  --max-turns 26 \
-  --trace traces/run.json \
-  --intent "Create a new Microsoft Word document, type 'Hello', and save it to the Desktop as 'demo'."
+python -m app.controlled_app.server                 # arena on :8800
+python -m app.fusion.test_skills --split all        # cold → compile → replay → verify, per family
 ```
-Drives the desktop with Gemini 3.5, prints each step + a **latency breakdown** (the model inference is ~85% of wall-clock), and writes the intent log to `--trace`.
 
-### Stage 2 — compile (the compiler)
+---
+
+## Recall — say it, and it remembers
+
+Learning is worthless if a skill can't be found again. `app/fusion/recall.py` embeds each promoted skill's intent into a **local-first** index and matches a plain-language goal to the right learned skill — closing the continual-learning loop:
+
+```
+intent  →  recall(intent)  →  load the learned skill  →  fusion replay at 0 CU, verified
+```
+
 ```bash
+python -m app.fusion.recall --backfill
+python -m app.fusion.recall "refund the paid Globex invoice"   # → fused_train-refund-globex (0.82)
+```
+
+Cosine match runs in-process (no network at recall time beyond embedding the query — a cheap *text* call, not a computer-use call, so replay stays 0 CU). MongoDB Atlas (`database/api.py`) is an **optional** cross-agent share, never a runtime dependency.
+
+---
+
+## Learned cross-surface hybrid skills (real web → your Mac apps)
+
+The fusion engine is surface-agnostic, so a skill can span **a real website and a native Mac app**. `app/fusion/hybrid.py` runs Gemini as the doer on *each* segment (`cu_runner` for the browser, `desktop_cu` for the desktop), compiles each real trace to a 0-CU `FusedSkill`, and chains them with a **typed payload** the orchestrator captures and bridges across surfaces — e.g. *the title Gemini selects on a real page is bridged to the pasteboard and pasted into a TextEdit note* (Playwright's browser clipboard is sandboxed from the OS, so the payload is captured explicitly, not assumed). Every seam is gated on ground truth (`world_verifiers.py`: clipboard / TextEdit), at learn **and** replay — a doer run that didn't actually achieve its segment is refused, never compiled. This is the genuinely-*learned* approach — the doer actually performs each segment, not a hand-built template.
+
+```bash
+python -m app.fusion.hybrid learn --url https://example.com --replay   # learn (real CU) then replay (0 CU)
+```
+
+---
+
+## The macOS desktop pipeline (record → compile → replay)
+
+This drives the **real macOS desktop** via `pyautogui` and has produced real `.docx` files and a multi-app Calculator → clipboard → Word flow.
+
+```bash
+# 1) record (the doer): Gemini drives the desktop, writes the intent log
+python3 -m app.desktop_cu --max-turns 26 --trace traces/run.json \
+  --intent "Create a Word document, type 'Hello', and save it to the Desktop as 'demo'."
+
+# 2) compile (the compiler): a Gemini pass → a keyboard-first macro
 python3 -m app.desktop_skill_compiler --trace traces/run.json --out database/skills/demo.macro.json
-```
-A Gemini 3.5 pass turns the intent log into a keyboard-first **macro** in `database/skills/`. The macro JSON is authored entirely by the model.
 
-### Stage 3 — replay (fast, no model)
-```bash
-python3 -m app.desktop_cu --replay database/skills/demo.macro.json          # plain
-python3 -m app.desktop_hud --skill create_word_file                         # with the notch HUD
+# 3) replay (fast, 0 model calls), optionally with the notch HUD
+python3 -m app.desktop_cu --replay database/skills/demo.macro.json
+python3 -m app.desktop_hud --skill create_word_file
 ```
-Runs the macro with `pyautogui` only — **0 tokens, 0 model calls**. Self-heal: if the post-replay success check fails, it can hand back to the model (see `app/desktop_speed.py`).
 
 ### Step-level self-improvement
-
-Versioned macro v2 skills verify every state transition locally with macOS UI state and final
-file checks. A failed transition stops the replay; `--repair` asks Gemini for a bounded patch to
-that step only, replays the full candidate from a clean state, and promotes it only after the
-deterministic checker passes.
+Versioned **macro v2** skills verify every state transition against macOS UI state and final file checks. A failed transition stops the replay; `--repair` asks Gemini for a bounded patch to *that step only*, replays the full candidate from a clean state, and promotes it only after the deterministic checker passes.
 
 ```bash
-# verified, model-free replay
-python -m app.self_improve replay create_word_file
-
-# deterministic stale fixture: localize, repair once, validate, and promote the shared subskill
-python -m app.self_improve demo stale_create_word_file \
-  --metrics traces/self_improvement.json
-
-# inspect active/candidate/rejected versions
-python -m app.self_improve history stale_ensure_blank_document
-
-# show verification/repair/promotion states in the notch HUD
-python -m app.desktop_hud --skill stale_create_word_file --repair
+python -m app.self_improve replay create_word_file                         # verified, model-free replay
+python -m app.self_improve demo stale_create_word_file --metrics traces/self_improvement.json
+python -m app.desktop_hud --skill stale_create_word_file --repair          # localize → repair → validate → promote
+python -m app.browser_self_improve replay acme_settings_email --headless   # the same engine, browser surface
 ```
 
-Runtime versions are stored atomically under `database/skills/registry/` and are intentionally
-gitignored. `create_word_file` and `meeting_notes` share `ensure_blank_document` and
-`save_word_document`, so a promoted subskill repair transfers to both workflows.
+Runtime skill versions live under `database/skills/registry/` (gitignored — these are runtime artifacts; the canonical seed skills `database/skills/*.macro.json` are tracked). `create_word_file` and `meeting_notes` share `ensure_blank_document` and `save_word_document`, so a promoted subskill repair transfers to both workflows.
 
-The same replay and repair engine supports both surfaces:
+### 🎙️ Talk to it
+A LiveKit voice agent runs learned desktop skills by voice and narrates live (Deepgram STT → Gemini 3.5 Flash → Cartesia TTS, via LiveKit Inference — no separate Google key on the replay path):
 
 ```bash
-# Multi-app desktop workflow with clipboard and DOCX verification
-python -m app.self_improve replay calculator_to_word_save
-
-# Semantic Playwright workflow with HTTP application-state verification
-python -m app.browser_self_improve replay acme_settings_email --headless
-python -m app.browser_self_improve repair acme_settings_email --headless
-
-# Compile a new successful trace for either surface
-python -m app.universal_skill_compiler --surface browser --trace traces/run.json --out database/skills/new.macro.json
+pip install -r requirements-voice.txt
+python3 -m app.voice_agent console     # then say: "calculate 52 times 68 and save it in Word."
 ```
 
-Browser skills use semantic targets (`role`, `label`, `text`, `testid`, or `css`) rather than
-stored coordinates. Final checkers can validate browser state, files, clipboard state, or a
-deterministic HTTP JSON endpoint. New applications only need a macro and an externally verifiable
-checker; the versioning and localized repair lifecycle is shared.
-
-### Two reliability features worth knowing
-- **Dynamic waits** (`ensure_app` / `settle` in `app/desktop_cu.py`) — instead of a fixed `sleep`, it polls macOS for app-readiness and watches the screen locally until it stops changing, then proceeds. An already-open app continues in ~0.3s instead of 6s.
-- **Notch HUD** (`app/notch.py`) — a Dynamic-Island-style status pill at the MacBook notch (AppKit via PyObjC), narrating each step with a live spinner + progress bar so a 2s app-load never looks frozen. Shows on **all Spaces** and never steals keyboard focus.
-
-### Macro format (`database/skills/*.macro.json`)
-A flat list of steps replayed top to bottom. Ops:
-```json
-{"op": "open_app", "app": "Microsoft Word", "launch_wait": 6, "why": "..."}  // self-checks: focus if open, launch+wait if not
-{"op": "hotkey",   "keys": ["command", "s"], "why": "..."}                    // a shortcut chord
-{"op": "key",      "key": "return", "why": "..."}                            // a single key
-{"op": "type",     "text": "Hello", "why": "..."}                           // type literal text
-{"op": "wait",     "seconds": 2, "why": "..."}                              // dynamic: proceeds when the screen settles, capped at `seconds`
-```
-
-### Measured results (live, this branch)
-| Task | Doer (model) | Replay (compiled) | Speedup |
-|---|---|---|---|
-| Create a Word file | 130s · 124,859 tok | 16s · **0 tok** | ~8× |
-| Formatted meeting notes (bold title + lines) | 175s · 173,351 tok | 23s · **0 tok** | ~7.6× |
-| Multi-app: Calculator → clipboard → Word | 132s · 256,063 tok | 17–35s · **0 tok** | ~4–8× |
+### Reliability features
+- **Dynamic waits** (`ensure_app` / `settle`) — polls macOS for app-readiness and watches the screen until it settles, instead of a fixed `sleep` (an already-open app continues in ~0.3s).
+- **Notch HUD** (`app/notch.py`) — a Dynamic-Island-style status pill at the MacBook notch (AppKit / PyObjC), narrating each step on all Spaces without stealing focus.
 
 ---
 
 ## Module map
+
+| File | Responsibility |
+|---|---|
+| `app/schemas.py` · `app/config.py` | contracts (`Task`/`Step`/`Trajectory`/`Skill`); models, viewport, flags, `.env` |
+| **Fusion engine (surface-agnostic)** | |
+| `app/fusion/contract.py` | `FusedSkill` + the `Executor`/`Verifier` protocols |
+| `app/fusion/dispatch.py` | tiered replay (keyboard → crop → model), CU-call accounting |
+| `app/fusion/compiler.py` | lower a verified Trajectory → `FusedSkill` (crop-gated) |
+| `app/fusion/{browser,desktop}_executor.py` | Playwright / pyautogui executors |
+| `app/fusion/verifier.py` · `world_verifiers.py` | ground-truth checks (arena `/state`, docx, clipboard, TextEdit) |
+| `app/fusion/skill_store.py` | versioned, success-gated fused-skill store |
+| `app/fusion/recall.py` | embed-on-promote + recall a skill by intent |
+| `app/fusion/hybrid.py` | learned cross-surface (web → Mac app) skills |
+| `app/fusion/test_skills.py` | multi-skill generalization harness (rebuilds the library) |
+| **Browser arena + eval** | |
+| `app/controlled_app/` | AcmeBilling Flask arena (`:8800`, `/state`, `/reset?variant=`) |
+| `app/tasks.py` · `app/checker.py` | 11-task train/held-out bank · deterministic checkers |
+| `app/eval_harness.py` | ablation / mutation / repair eval |
+| `app/cu_runner.py` · `app/executor.py` · `app/runner.py` · `app/trace.py` | browser CU loop → Trajectory |
+| **Desktop / self-improvement** | |
+| `app/desktop_cu.py` · `app/desktop_skill_compiler.py` · `app/universal_skill_compiler.py` | desktop doer + compilers |
+| `app/verified_replay.py` · `app/verification.py` | condition-checked macro replay + DSL |
+| `app/local_skill_registry.py` · `app/skill_repair.py` | versioned promotion + localized repair |
+| `app/notch.py` · `app/desktop_hud.py` · `app/voice_agent.py` | notch HUD · HUD runner · voice agent |
+| `database/api.py` + `data/` | **optional** vector store (Atlas) for cross-agent skill sharing — *seed/mock data; recall is local-first and does not depend on it* |
 | File | Status | Responsibility |
 |---|---|---|
 | `app/schemas.py` | ✅ | frozen contracts: `Task`, `Step`, `Trajectory`, `Skill` |
@@ -148,28 +176,24 @@ A flat list of steps replayed top to bottom. Ops:
 
 ---
 
-## Quickstart (for new teammates)
+## Quickstart
+
 > macOS only for the desktop track. Use **`python3`** to create the venv; after `activate`, plain `python` works.
+
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-playwright install chromium          # only needed for the browser track
+playwright install chromium                       # browser + arena + fusion track
 
-cp .env.example .env                 # then add GEMINI_API_KEY=...   (.env is gitignored)
+cp .env.example .env                              # add GEMINI_API_KEY=...  (.env is gitignored)
 ```
 
-**macOS permissions (one-time, required for the desktop track).** The app running the process (Terminal / iTerm / VS Code) needs both, or screenshots come back blank and clicks do nothing:
-- System Settings → Privacy & Security → **Screen Recording**
-- System Settings → Privacy & Security → **Accessibility**
+**macOS permissions (one-time, desktop track).** The app running the process (Terminal / iTerm / VS Code) needs both, or screenshots come back blank and clicks do nothing:
+- System Settings → Privacy & Security → **Screen Recording** and **Accessibility**
 
-Verify with:
 ```bash
-python3 -m app.desktop_cu --probe
-```
-
-**Browser smoke test (no controlled app needed):**
-```bash
-python -m app.runner --url https://www.google.com --intent "Search for 'Gemini API'."
+python3 -m app.desktop_cu --probe                 # verify permissions
+python -m app.runner --url https://www.google.com --intent "Search for 'Gemini API'."   # browser smoke test
 ```
 
 ### FastMCP server
@@ -203,16 +227,6 @@ The Atlas Vector Search index `description` must index `embedding` as the vector
 controls the real keyboard and mouse and therefore requires `confirm_execution=true` on every call.
 
 ⚠️ The desktop track moves your real mouse and keyboard. Keep hands off while it runs; slam the mouse into a screen corner to abort (pyautogui failsafe).
-
-## Next up
-- Run and record the stale Word fixture on the stage machine with its exact Word version.
-- Sync the local versioned registry to MongoDB Atlas so promoted skills can be shared across agents.
-- Generalize beyond Word/Calculator (Excel, browser, Mail) to prove the loop holds across surfaces.
-
-See `docs/PLAN.md` for the full plan, contracts, and risk register.
-
-## Sponsors
-Gemini 3.5 Computer Use (core) · MongoDB Atlas (skill registry) · DigitalOcean (eval fleet + host) · MiniMax (second agent over MCP).
 
 ## License
 MIT

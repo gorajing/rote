@@ -223,7 +223,7 @@ def replay(macro: dict, on_step=None):
             step = payload["step"]
             on_step(payload["index"], payload["total"], step.get("why", step["op"]))
 
-    result = replay_verified(macro, allow_repair=False, on_event=event)
+    result = replay_verified(macro, allow_repair=False, on_event=event, optimistic=True)
     result.update({
         "tokens": 0,
         "model_s": 0.0,
