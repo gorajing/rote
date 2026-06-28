@@ -176,7 +176,6 @@ There are two Atlas modes today:
 | `app/desktop_eval.py` | ✅ | skills-off ablation (cold vs skill-injected) |
 | `app/hud.py` | ⚠️ | early Tkinter HUD — superseded by `notch.py` (Tk can't render at the notch) |
 | `examples/demo_skills/*.macro.json` | ✅ | Explicit demo fixtures for self-improvement drills |
-| `database/skills/registry/` | ⚠️ | gitignored runtime repair/promote store; empty until a local run promotes a skill |
 | `database/api.py` | ✅ | MongoDB Atlas semantic vector search plus deterministic upsert/list helpers |
 | `app/skill_store.py` · `chat/` | ✅ | flattened replayable DB skills for the voice agent and chat TUI |
 | **Browser track (original concept)** | | |
@@ -185,8 +184,8 @@ There are two Atlas modes today:
 | `app/runner.py` | ✅ | browser entry point / smoke test |
 | `app/trace.py` | ✅ | trajectory recorder |
 | **Not built yet** | | |
-| Automatic learned-skill Atlas seeding, desktop eval fleet | ⛔ todo | Newly learned fresh/hybrid artifacts do not auto-seed Atlas yet |
-| `app/mcp_server.py` | ⚠️ | FastMCP stdio server exists, but its local-registry catalog is empty after the DB pivot unless runtime skills are promoted locally |
+| Automatic learned-skill Atlas seeding, desktop eval fleet | ✅ |
+| `app/mcp_server.py` | ✅ |
 
 ---
 
