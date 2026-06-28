@@ -24,6 +24,7 @@ from .compiler import compile as compile_fused
 from .dispatch import replay
 from .browser_executor import BrowserExecutor
 from .verifier import make_verifier
+from .skill_store import FusionSkillStore
 
 MAX_COLD = 4
 VERIFY = {"kind": "checker", "checker": HERO.checker, "params": dict(HERO.params)}
@@ -90,7 +91,13 @@ def main():
                 rows.append(("structural recompiled", None))
             else:
                 print(f"  recompiled -> {len(skill2.steps)} steps")
-                rows.append(("structural recompiled", _replay_on(page, skill2, "move_dispute_to_cases", "recompiled")))
+                r3 = _replay_on(page, skill2, "move_dispute_to_cases", "recompiled")
+                rows.append(("structural recompiled", r3))
+                if r3["verified"]:                               # remember it: promote across runs
+                    rec = FusionSkillStore().save_promoted(
+                        skill2, verified=True, cu_calls=r3["cu_calls"], reason="structural recompile")
+                    print(f"  PROMOTED to fusion registry v{rec['version']} "
+                          f"— next run can load it (0-CU, no recompile)")
         browser.close()
 
     print("\n=== FUSED SELF-HEAL SUMMARY ===")

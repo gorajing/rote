@@ -1,0 +1,72 @@
+"""Hermetic tests for the fusion skill store — the cross-run 'it remembers' persistence.
+
+Covers the three regressions that matter: success-gating (never promote an unverified skill),
+crop-preserving roundtrip (FusedSkill survives store->load intact, including spatial crops),
+and versioning (a second promote bumps the version and supersedes the previous active).
+No arena, no Gemini, no network.
+"""
+import base64
+import tempfile
+import unittest
+from pathlib import Path
+
+from app.fusion.contract import FusedSkill, Precondition, Step
+from app.fusion.skill_store import FusionSkillStore
+
+_CROP = base64.b64encode(b"fake-png-bytes-for-the-crop").decode()
+
+
+def _skill(name="dispute", version=1):
+    return FusedSkill(
+        name=name, surface="browser", target="http://localhost:8800/billing",
+        params={"customer": "Acme Corp"}, verify={"kind": "checker", "checker": "dispute_workflow"},
+        version=version,
+        steps=[
+            Step("click the Acme row", "click", {"x": 100, "y": 200}, pre=Precondition(crop_b64=_CROP)),
+            Step("type the note", "type", {"text": "duplicate charge"}),
+        ],
+    )
+
+
+class TestFusionSkillStore(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.store = FusionSkillStore(root=Path(self._tmp.name))
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_promote_is_success_gated(self):
+        with self.assertRaises(ValueError):
+            self.store.save_promoted(_skill(), verified=False)
+        self.assertIsNone(self.store.load_active("dispute"))  # nothing persisted on refusal
+
+    def test_save_then_load_roundtrip_preserves_crops(self):
+        rec = self.store.save_promoted(_skill(version=1), verified=True, cu_calls=0)
+        self.assertEqual(rec["status"], "active")
+        self.assertEqual(rec["version"], 2)  # bumped from the parent (1)
+
+        got = self.store.load_active("dispute")
+        self.assertIsNotNone(got)
+        self.assertEqual(got.name, "dispute")
+        self.assertEqual(got.surface, "browser")
+        self.assertEqual(len(got.steps), 2)
+        self.assertEqual(got.steps[0].primitive, "click")
+        self.assertEqual(got.steps[0].args, {"x": 100, "y": 200})
+        self.assertEqual(got.steps[0].pre.crop_b64, _CROP)          # crop preserved
+        self.assertEqual(got.steps[1].primitive, "type")
+        self.assertEqual(got.steps[1].args["text"], "duplicate charge")
+        self.assertIsNone(got.steps[1].pre)
+
+    def test_second_promote_bumps_and_supersedes(self):
+        self.store.save_promoted(_skill(version=1), verified=True)   # -> v2 active
+        v2 = self.store.load_active("dispute")
+        self.store.save_promoted(v2, verified=True)                  # -> v3 active, v2 superseded
+        status = {h["version"]: h["status"] for h in self.store.history("dispute")}
+        self.assertEqual(status.get(3), "active")
+        self.assertEqual(status.get(2), "superseded")
+        self.assertEqual(self.store.load_active("dispute").version, 3)
+
+
+if __name__ == "__main__":
+    unittest.main()
