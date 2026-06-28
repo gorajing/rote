@@ -93,6 +93,9 @@ class NotchIsland:
     def step(self, i, total, text):
         STATE.update(i=i, total=total, text=text)
 
+    def status(self, text):
+        STATE.update(text=text)
+
     def finish(self, text="Done"):
         STATE.update(text=text, done=True, i=STATE["total"])
         self._done_at = time.time()

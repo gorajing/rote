@@ -40,9 +40,35 @@ A Gemini 3.5 pass turns the intent log into a keyboard-first **macro** in `datab
 ### Stage 3 — replay (fast, no model)
 ```bash
 python3 -m app.desktop_cu --replay database/skills/demo.macro.json          # plain
-python3 -m app.desktop_hud --replay database/skills/demo.macro.json         # with the notch HUD
+python3 -m app.desktop_hud --skill create_word_file                         # with the notch HUD
 ```
 Runs the macro with `pyautogui` only — **0 tokens, 0 model calls**. Self-heal: if the post-replay success check fails, it can hand back to the model (see `app/desktop_speed.py`).
+
+### Step-level self-improvement
+
+Versioned macro v2 skills verify every state transition locally with macOS UI state and final
+file checks. A failed transition stops the replay; `--repair` asks Gemini for a bounded patch to
+that step only, replays the full candidate from a clean state, and promotes it only after the
+deterministic checker passes.
+
+```bash
+# verified, model-free replay
+python -m app.self_improve replay create_word_file
+
+# deterministic stale fixture: localize, repair once, validate, and promote the shared subskill
+python -m app.self_improve demo stale_create_word_file \
+  --metrics traces/self_improvement.json
+
+# inspect active/candidate/rejected versions
+python -m app.self_improve history stale_ensure_blank_document
+
+# show verification/repair/promotion states in the notch HUD
+python -m app.desktop_hud --skill stale_create_word_file --repair
+```
+
+Runtime versions are stored atomically under `database/skills/registry/` and are intentionally
+gitignored. `create_word_file` and `meeting_notes` share `ensure_blank_document` and
+`save_word_document`, so a promoted subskill repair transfers to both workflows.
 
 ### Two reliability features worth knowing
 - **Dynamic waits** (`ensure_app` / `settle` in `app/desktop_cu.py`) — instead of a fixed `sleep`, it polls macOS for app-readiness and watches the screen locally until it stops changing, then proceeds. An already-open app continues in ~0.3s instead of 6s.
@@ -75,6 +101,9 @@ A flat list of steps replayed top to bottom. Ops:
 | **Desktop track (works today)** | | |
 | `app/desktop_cu.py` | ✅ | desktop doer (Gemini CU + pyautogui), `replay()`, dynamic waits (`ensure_app`/`settle`) |
 | `app/desktop_skill_compiler.py` | ✅ | **the desktop compiler** — Gemini reads an intent log → writes a macro |
+| `app/verified_replay.py` | ✅ | step pre/postconditions, parameter binding, subskill expansion, deterministic checker |
+| `app/local_skill_registry.py` | ✅ | local candidate/version history and success-gated promotion |
+| `app/skill_repair.py` | ✅ | localized Gemini patch generation and clean end-to-end validation |
 | `app/notch.py` | ✅ | Dynamic-Island notch HUD (AppKit / PyObjC) |
 | `app/desktop_hud.py` | ✅ | run a replay with the notch HUD |
 | `app/desktop_speed.py` | ✅ | cold-CU vs compiled-replay speed proof (+ self-heal fallback) |
@@ -88,7 +117,7 @@ A flat list of steps replayed top to bottom. Ops:
 | `app/runner.py` | ✅ | browser entry point / smoke test |
 | `app/trace.py` | ✅ | trajectory recorder |
 | **Not built yet** | | |
-| `skill_registry` (Mongo Atlas), `repair`, `checker`, `eval_harness`, `controlled_app/`, `mcp_server` | ⛔ todo | see `docs/PLAN.md` |
+| Atlas registry sync, desktop eval fleet, `mcp_server` | ⛔ todo | local versioned registry and repair are implemented; remote sharing remains |
 
 ---
 
@@ -119,8 +148,8 @@ python -m app.runner --url https://www.google.com --intent "Search for 'Gemini A
 ⚠️ The desktop track moves your real mouse and keyboard. Keep hands off while it runs; slam the mouse into a screen corner to abort (pyautogui failsafe).
 
 ## Next up
-- Wire self-heal into the `--replay` path (currently only in `desktop_speed.py`).
-- `skill_registry` over MongoDB Atlas so compiled skills are shared/retrieved across runs.
+- Run and record the stale Word fixture on the stage machine with its exact Word version.
+- Sync the local versioned registry to MongoDB Atlas so promoted skills can be shared across agents.
 - Generalize beyond Word/Calculator (Excel, browser, Mail) to prove the loop holds across surfaces.
 
 See `docs/PLAN.md` for the full plan, contracts, and risk register.
