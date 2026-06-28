@@ -21,7 +21,7 @@ Two models, two roles:
 
 ## Two replay engines
 
-Rote ships two engines that share this philosophy; both replay at 0 CU and verify against ground truth.
+Rote ships two engines that share this philosophy: both replay **model-free on the happy path (0 CU)** and decide success against ground truth — and when a step drifts, both fall back to the model for *exactly that step* (self-heal) rather than failing or faking it.
 
 1. **Verified-macro engine** (`app/verified_replay.py`) — desktop macOS macros with per-step pre/postconditions, retries, fallbacks, and localized repair. Drives the **real desktop** via `pyautogui`. Replay defaults to the verified per-step contract; `optimistic` blind-fast replay is **opt-in** (voice HUD / plain `--replay`).
 2. **Fusion engine** (`app/fusion/`) — a **surface-agnostic** tiered dispatcher that replays a compiled `FusedSkill` by routing each step to the cheapest tier that reproduces it:
@@ -41,12 +41,15 @@ A hard, deterministic **controlled web app** to measure the engine honestly.
 - **Deterministic checkers** (`app/checker.py`) read `/state` — `dispute_workflow`, `row_find_act`, `settings_change` — so "success" is never self-reported.
 - **Eval harness** (`app/eval_harness.py`) — skills-off ablation, UI-mutation variants, repair-eval.
 
-**The headline metric is unfakeable: CU calls N → 0, verified by ground truth.** On the fusion engine across the bank, the **refund** and **settings** families generalize cleanly (train → held-out, **0 CU, verified**); the long modal-heavy **dispute** workflows are the honest hard frontier (crop drift → self-heal escalation). Reproduce with:
+**The headline metric is unfakeable: CU calls N → 0, verified by ground truth** — a skill that didn't actually achieve its goal is refused, never cached. Generalization is honestly **uneven by family**: `settings_change` replays reliably at **0 CU, verified**; `row_find_act` (refund) generalizes, but crop drift on a held-out row can cost **one self-heal call (CU=1)** before it re-grounds; the modal-heavy `invoice_action` (dispute) workflows are the **hard frontier** — drift escalates and sometimes needs a full recompile. Cold-learning is a live Gemini run, so the exact per-task 0-CU count **varies between runs** (a representative run lands ~3/5 of the sampled tasks at 0 CU verified); the durable claim is not a fixed score but the **mechanism** — drift is paid once, then amortizes to 0, always behind a ground-truth gate. That mechanism is locked down by a hermetic test bank (`tests/`, **37 tests, no key or network**). Reproduce the live eval with:
 
 ```bash
 python -m app.controlled_app.server                 # arena on :8800
-python -m app.fusion.test_skills --split all        # cold → compile → replay → verify, per family
+python -m app.fusion.test_skills --split all        # cold → compile → replay → verify, per family (live, stochastic)
+python -m unittest discover -s tests                # the deterministic mechanism proof (no key needed)
 ```
+
+**What's proven vs. the frontier.** The demo-safe spine is solid and reproducible: **browser fusion replay at 0 CU**, **settings generalization**, **self-heal that persists** (drift paid once, then free — `validate_persist` drives the live arena to **CU 0 → 1 → 0** across a save/reload-from-disk boundary), and **recall** of a warm skill by plain-language intent. The honest frontier, still model-bound today: arbitrary generalization across *all* 11 tasks (dispute modal drift), the learned web→native-app **hybrid** (Gemini action-safety blocks the cross-context paste — see below), and **live cold-launch of heavy desktop apps** like Word (UI-readiness timing). We ship those as architecture and say plainly where the model stops us.
 
 ---
 
@@ -71,15 +74,17 @@ Cosine match runs in-process (no network at recall time beyond embedding the que
 
 The fusion engine is surface-agnostic, so a skill can span **a real website and a native Mac app**. `app/fusion/hybrid.py` runs Gemini as the doer on *each* segment (`cu_runner` for the browser, `desktop_cu` for the desktop), compiles each real trace to a 0-CU `FusedSkill`, and chains them with a **typed payload** the orchestrator captures and bridges across surfaces — e.g. *the title Gemini selects on a real page is bridged to the pasteboard and pasted into a TextEdit note* (Playwright's browser clipboard is sandboxed from the OS, so the payload is captured explicitly, not assumed). Every seam is gated on ground truth (`world_verifiers.py`: clipboard / TextEdit), at learn **and** replay — a doer run that didn't actually achieve its segment is refused, never compiled. This is the genuinely-*learned* approach — the doer actually performs each segment, not a hand-built template.
 
+**Honest status (current).** The **browser segment works and is ground-truth-verified** — Gemini really selects the target text and the captured payload is confirmed on the OS pasteboard. The **desktop paste seam is currently blocked by Gemini's built-in action-safety**, which refuses the cross-context (web→desktop) paste (`BadRequestError: Input blocked`) — observed even on `example.com`. That is a model-side limitation; we do **not** disable safety to force it. The typed-payload architecture and the browser half are proven; the open path is to complete the desktop seam *deterministically* (paste/save as known keystrokes, bypassing the model for that one fixed step) rather than asking the model to perform an action it refuses.
+
 ```bash
-python -m app.fusion.hybrid learn --url https://example.com --replay   # learn (real CU) then replay (0 CU)
+python -m app.fusion.hybrid learn --url https://example.com --replay   # browser segment verified; desktop paste seam blocked by model safety
 ```
 
 ---
 
 ## The macOS desktop pipeline (record → compile → replay)
 
-This drives the **real macOS desktop** via `pyautogui` and has produced real `.docx` files and a multi-app Calculator → clipboard → Word flow.
+This drives the **real macOS desktop** via `pyautogui` and has produced real `.docx` files and a multi-app Calculator → clipboard → Word flow. **Honest status:** desktop replay is real but **launch-timing-sensitive** — a heavy app like Word can report a window before its UI is actually interactive, so a *cold-launch* replay can stall at the launch step (`_app_ready` checks window-count, not interactivity). The reliably-demonstrable self-improvement path for a live demo is the browser/fusion engine (`validate_selfheal`) plus recall; the desktop track is best shown against an already-warm app.
 
 ```bash
 # 1) record (the doer): Gemini drives the desktop, writes the intent log
@@ -135,6 +140,7 @@ python3 -m app.voice_agent console     # then say: "calculate 52 times 68 and sa
 | `app/fusion/recall.py` | embed-on-promote + recall a skill by intent |
 | `app/fusion/hybrid.py` | learned cross-surface (web → Mac app) skills |
 | `app/fusion/test_skills.py` | multi-skill generalization harness (rebuilds the library) |
+| `app/fusion/validate_selfheal.py` · `validate_persist.py` | live proofs: drift → self-heal, and the persistence round-trip (CU 0→1→0) |
 | **Browser arena + eval** | |
 | `app/controlled_app/` | AcmeBilling Flask arena (`:8800`, `/state`, `/reset?variant=`) |
 | `app/tasks.py` · `app/checker.py` | 11-task train/held-out bank · deterministic checkers |

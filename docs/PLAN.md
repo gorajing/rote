@@ -12,7 +12,7 @@ Headline metric = **CU model calls (+ $ + latency)**, verified by ground truth: 
 `Trajectory.success` is filled ONLY by the deterministic checker reading `/state`, NEVER the model. Pitch against the literature: ~52–59% of competitors' "success"-labeled memory came from FAILED self-reported runs → memory that rots. Rote's checker-gated induction = memory that doesn't.
 
 ## Shipped today
-Three tracks, all replaying at **0 CU** and verified against ground truth.
+Three tracks. All replay **model-free on the happy path (0 CU)** and verify against ground truth, falling back to a single self-heal CU call on drift. Reliability is uneven across tracks — the browser/fusion engine is the demo-safe spine; live cold-launch of heavy desktop apps (Word) and the web→native hybrid paste are the model-bound frontier (see the honest per-track notes below and in [`README.md`](../README.md)).
 
 ### 1) Desktop macro pipeline (macOS, condition-checked)
 `app/desktop_cu.py` (the doer) → `app/desktop_skill_compiler.py` + `app/universal_skill_compiler.py` (a 2nd Gemini pass compiles the trajectory into a macro) → `app/verified_replay.py` (per-step pre/postconditions, retries, fallbacks; drives the **real desktop** via `pyautogui`). Localized repair via `app/skill_repair.py`; versioned local promotion via `app/local_skill_registry.py`. Notch HUD (`app/notch.py` + `app/desktop_hud.py`) and voice runner (`app/voice_agent.py`).
@@ -23,7 +23,7 @@ One tiered dispatcher replays a compiled `FusedSkill` across **browser and deskt
 
 ### 3) Browser arena + 11-task eval
 `app/controlled_app/` — **AcmeBilling**, a deterministic Flask app at `http://localhost:8800` with a `/state` snapshot endpoint and `/reset?variant=…` for structural UI mutations. `app/tasks.py` — **6 train + 5 held-out** across **three families** (`invoice_action`, `row_find_act`, `settings_change`). `app/checker.py` — deterministic checkers (`dispute_workflow`, `row_find_act`, `settings_change`) read `/state`, so "success" is never self-reported. `app/eval_harness.py` — skills-off ablation / UI-mutation / repair eval.
-- **Metric, honest:** CU **N → 0**, verified by ground truth. On the fusion engine across the bank, the **refund** and **settings** families generalize cleanly (train → held-out, 0 CU, verified); the long modal-heavy **dispute** workflow is the honest hard frontier (crop drift → self-heal escalation).
+- **Metric, honest:** CU **N → 0**, verified by ground truth. Generalization is uneven by family: `settings_change` replays reliably at 0 CU verified; `row_find_act` (refund) generalizes but a held-out row's crop drift can cost **CU=1** before re-grounding; the modal-heavy `invoice_action` (dispute) workflow is the **hard frontier** (drift escalates, sometimes needs a full recompile). Cold-learn is a live, stochastic Gemini run — a representative run lands ~3/5 of the sampled tasks at 0 CU verified — so the durable claim is the **mechanism** (drift paid once → amortizes to 0, always ground-truth-gated), proven deterministically by the hermetic test bank, not a fixed per-task score.
 
 Reproduce (canonical commands in [`README.md`](../README.md)):
 ```bash
