@@ -23,10 +23,27 @@ class DocToMacroTests(unittest.TestCase):
         self.assertEqual(macro["name"], "calc")
 
     def test_top_level_macro_steps_are_wrapped(self):
-        doc = {"name": "x", "surface": "desktop", "steps": [{"op": "open_app", "app": "Word"}]}
+        doc = {
+            "name": "x", "surface": "desktop", "checker": {"type": "condition", "condition": {}},
+            "steps": [{"op": "open_app", "app": "Word"}],
+        }
         macro = skill_store._doc_to_macro(doc)
         self.assertIsNotNone(macro)
         self.assertEqual(macro["steps"][0]["op"], "open_app")
+
+    def test_missing_checker_is_not_replayable(self):
+        doc = {"name": "x", "surface": "desktop", "steps": [{"op": "open_app", "app": "Word"}]}
+        self.assertIsNone(skill_store._doc_to_macro(doc))
+
+    def test_inactive_skill_doc_is_not_replayable(self):
+        doc = _skill_doc("old", "old skill", 0.95)
+        doc["status"] = "superseded"
+        self.assertIsNone(skill_store._doc_to_macro(doc))
+
+    def test_call_steps_are_not_replayable_from_db(self):
+        doc = _skill_doc("call", "calls a local subskill", 0.95)
+        doc["steps"] = [{"id": "child", "op": "call", "skill": "local_only"}]
+        self.assertIsNone(skill_store._doc_to_macro(doc))
 
     def test_placeholders_without_params_is_not_replayable(self):
         # an older 'variables'-only skill: steps reference {{a}} but params is empty -> reject
@@ -50,9 +67,10 @@ class DocToMacroTests(unittest.TestCase):
 class SearchTests(unittest.TestCase):
     def test_returns_best_replayable_above_threshold(self):
         hits = [_skill_doc("calc", "calculate", 0.88), _skill_doc("notes", "notes", 0.83)]
-        with mock.patch.object(skill_store.api, "retrieve", return_value=hits):
+        with mock.patch.object(skill_store.api, "retrieve", return_value=hits) as retrieve:
             macro = skill_store.search("do a calculation", threshold=0.82)
         self.assertEqual(macro["name"], "calc")
+        self.assertEqual(retrieve.call_args.kwargs["filters"], {"doc_type": "skill"})
 
     def test_below_threshold_returns_none(self):
         hits = [_skill_doc("calc", "calculate", 0.79)]

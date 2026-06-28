@@ -1,7 +1,7 @@
 """Speed proof: cold computer-use vs. compiled-skill REPLAY — Rote's real performance thesis.
 
   COLD    — Gemini drives the desktop from scratch (screenshot -> infer -> act, every step)
-  REPLAY  — the compiled keyboard macro runs locally: NO screenshots, NO model calls.
+  REPLAY  — a compiled keyboard macro runs locally: NO screenshots, NO model calls.
             If the post-replay success check fails, it SELF-HEALS by handing off to the model.
 
 Prints the latency breakdown (how much of COLD is model inference) and the speedup.
@@ -57,6 +57,11 @@ if __name__ == "__main__":
     cold["file_ok"] = verify()
 
     print(f"\n{'='*60}\nARM 2: REPLAY compiled macro (no model)\n{'='*60}")
+    if not MACRO.exists():
+        raise SystemExit(
+            f"Missing replay macro: {MACRO}. The old tracked seed catalog was intentionally "
+            "deleted after the DB runtime pivot; compile a fresh macro first and update MACRO."
+        )
     reset()
     macro = json.loads(MACRO.read_text())
     rep = replay(macro)

@@ -18,6 +18,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 import database.api as db_api
 from app import skill_store
+from app.macro_skill import validate_macro
 from app.desktop_cu import run as cu_run
 from app.desktop_skill_compiler import compile_macro
 from app.verified_replay import replay_verified
@@ -29,10 +30,12 @@ def search_db(description: str) -> list[dict]:
     Each result is a fully replayable macro (steps + params + checker) plus display metadata
     (name, description, score, variables), so the agent can decide AND pass it straight to
     execute_skill. Skills are stored in the unified top-level schema (see app/skill_store)."""
-    raw = db_api.retrieve(description, top_k=3)
+    raw = db_api.retrieve(description, top_k=3, filters={"doc_type": "skill"})
     results = []
     for r in raw:
-        macro = skill_store._doc_to_macro(r) or {}    # steps/params/checker/surface -> replayable
+        macro = skill_store._doc_to_macro(r)          # steps/params/checker/surface -> replayable
+        if macro is None:
+            continue
         results.append({
             "_id":         str(r.get("_id", "")),
             "name":        r.get("name", "unknown"),
@@ -52,6 +55,9 @@ def execute_skill(skill: dict, params: dict | None = None) -> dict:
     Uses the verified deterministic replay engine — zero model calls for known tasks.
     Runtime `params` override the skill's default param values.
     """
+    validate_macro(skill)
+    if skill_store._has_call_steps(skill.get("steps", [])):
+        raise ValueError("DB replay requires a self-contained skill with no call steps")
     result = replay_verified(skill, params or {})
     return {
         "success":          result.get("success", False),
@@ -98,4 +104,5 @@ def put_db(skill: dict) -> str:
     Returns the inserted document ID as a string.
     """
     description = skill.get("description") or skill.get("note") or skill.get("name", "")
+    validate_macro(skill)
     return skill_store.save_skill(skill, description, skill.get("name"))

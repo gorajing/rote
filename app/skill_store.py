@@ -1,4 +1,4 @@
-"""MongoDB-backed skill store — the voice agent's ONLY source of skills (no local files at runtime).
+"""MongoDB-backed replayable skill store for the voice agent and chat TUI.
 
 Search and push both hit the Atlas `tasks` collection via database/api.py (semantic vector search on
 the `description` field, whose index is READY). A learned skill is stored as a self-contained,
@@ -80,6 +80,10 @@ def _placeholders(obj) -> set:
     return set()
 
 
+def _has_call_steps(steps: list) -> bool:
+    return any(isinstance(step, dict) and step.get("op") == "call" for step in steps)
+
+
 def _doc_to_macro(doc: dict) -> dict | None:
     """Coerce a `tasks` document into a replayable macro, or None if it isn't one.
 
@@ -90,11 +94,17 @@ def _doc_to_macro(doc: dict) -> dict | None:
     steps = doc.get("steps")
     if not (isinstance(steps, list) and steps and all(isinstance(s, dict) and "op" in s for s in steps)):
         return None
+    if _has_call_steps(steps):
+        return None
+    if doc.get("status", "active") != "active":
+        return None
     macro = {k: v for k, v in doc.items() if k not in _NON_MACRO_KEYS}
     macro.setdefault("schema_version", 2)
     macro.setdefault("name", doc.get("name") or "task")
     macro.setdefault("surface", doc.get("surface", "desktop"))
     macro.setdefault("params", {})
+    if not macro.get("checker"):
+        return None
     # Only treat as replayable if every {{placeholder}} has a default value in params. This rejects
     # broken docs (e.g. older 'variables'-only skills with no param values) so the agent never tries
     # to replay something whose placeholders it can't fill -> it cleanly learns the task instead.
@@ -108,7 +118,7 @@ def search(text: str, threshold: float | None = None) -> dict | None:
     """Semantic search `tasks`; return a replayable macro for the best match above threshold."""
     threshold = MATCH_THRESHOLD if threshold is None else threshold
     try:
-        hits = api.retrieve(text, top_k=3)
+        hits = api.retrieve(text, top_k=3, filters={"doc_type": "skill"})
     except Exception:
         return None
     for doc in hits:

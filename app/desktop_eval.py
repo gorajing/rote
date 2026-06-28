@@ -2,7 +2,7 @@
 
 Same task, two arms:
   COLD       — no recipe; Gemini figures it out from scratch
-  WITH SKILL — the verified markdown recipe (database/skills/) injected as an intent-sequence
+  WITH SKILL — a verified markdown recipe injected as an intent-sequence
 
 Prints steps / wall-clock / tokens side by side so you can SEE which is better.
 State is reset between arms (quit Word, delete the output file) for a fair comparison.
@@ -65,6 +65,11 @@ if __name__ == "__main__":
     if not probe():
         raise SystemExit("Fix Screen Recording / Accessibility permissions first.")
 
+    if not SKILL.exists():
+        raise SystemExit(
+            f"Missing skill recipe: {SKILL}. The old tracked seed catalog was intentionally "
+            "deleted after the DB runtime pivot; record or provide a fresh recipe first."
+        )
     skill_md = SKILL.read_text()
     cold = arm("COLD (no skill)", None)
     withskill = arm("WITH SKILL", skill_md)

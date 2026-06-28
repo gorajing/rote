@@ -10,6 +10,9 @@ from .skill_repair import RepairService, reset_stale_textedit_note, reset_stale_
 from .verified_replay import replay_verified
 
 
+DEMO_SKILLS = Path(__file__).resolve().parent.parent / "examples" / "demo_skills"
+
+
 def _params(items: list[str]) -> dict:
     result = {}
     for item in items:
@@ -23,7 +26,9 @@ def _params(items: list[str]) -> dict:
 def _load_demo_skill(registry: LocalSkillRegistry, name: str) -> dict:
     """Demo mode should be repeatable: start from the tracked stale fixture even if a previous
     run already promoted a repaired runtime version."""
-    source = registry.root / f"{name}.macro.json"
+    source = DEMO_SKILLS / f"{name}.macro.json"
+    if not source.exists():
+        source = registry.root / f"{name}.macro.json"
     if source.exists():
         return json.loads(source.read_text(encoding="utf-8"))
     return registry.load_skill(name)

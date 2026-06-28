@@ -1,6 +1,6 @@
 """Cross-device validation: the FUSED dispatch driving the macOS DESKTOP at 0 CU, artifact-verified.
 
-Lowers Shah's create_word_file macro into a FusedSkill and replays it through the SAME
+Lowers a desktop macro into a FusedSkill and replays it through the SAME
 app.fusion.dispatch + DesktopExecutor + ArtifactVerifier that drive the browser — proving the
 dispatcher is truly surface-agnostic: zero model calls, success gated on the real .docx on disk
 (not self-report). All 11 macro steps are keyboard ops, so every one routes to the keyboard tier.
@@ -56,6 +56,13 @@ def main():
     if args.probe:
         print("probe OK — permissions are in place.")
         return
+
+    if not os.path.exists(MACRO_PATH):
+        raise SystemExit(
+            f"Missing desktop macro fixture: {MACRO_PATH}. The old tracked seed catalog was "
+            "intentionally deleted after the DB runtime pivot; provide a fresh macro before "
+            "running this validation."
+        )
 
     macro = json.load(open(MACRO_PATH))
     skill = FusedSkill(

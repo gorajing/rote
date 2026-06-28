@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""Local Skill lookup and MongoDB Atlas vector search APIs.
+"""Legacy local Skill metadata lookup and MongoDB Atlas vector search APIs.
 
-The local ``query`` API remains available for deterministic, offline Skill
-lookup. ``push`` and ``retrieve`` provide semantic storage and search using
-Gemini embeddings stored in MongoDB Atlas.
+The local ``query`` API remains available for exact legacy metadata lookup, but
+the old ``database/data/*.json`` skill payloads are no longer shipped after the
+DB-backed runtime pivot. ``push`` and ``retrieve`` provide semantic storage and
+search using Gemini embeddings stored in MongoDB Atlas.
 
 Python examples::
 
-    query(platform="web", address="amazon", load_skill=True)
+    query(platform="web", address="amazon")
     push({"title": "Amazon", "description": "Buy headphones"})
     retrieve("how to buy headphones", top_k=3)
 
 CLI examples::
 
-    python database/api.py local web --address amazon --skill
+    python database/api.py local web --address amazon
     python database/api.py push '{"description": "buy headphones"}'
     python database/api.py retrieve "how to buy headphones" --top-k 3
 """
@@ -55,7 +56,13 @@ def _load_index() -> list[dict]:
 
 
 def _entry_to_skill(entry: dict) -> Skill:
-    data = json.loads((_DATA_DIR / entry["filename"]).read_text(encoding="utf-8"))
+    path = _DATA_DIR / entry["filename"]
+    if not path.exists():
+        raise RuntimeError(
+            "legacy local skill payloads are not shipped after the DB runtime pivot; "
+            "query without load_skill or use Atlas-backed skill search"
+        )
+    data = json.loads(path.read_text(encoding="utf-8"))
     return Skill(**data)
 
 

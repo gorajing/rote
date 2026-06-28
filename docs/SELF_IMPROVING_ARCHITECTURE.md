@@ -3,6 +3,8 @@
 > **Audience:** AI agents and developers working on the self-improving replay/repair engine, now **merged to `main`** (originally landed on `feat/self-improving`).  
 > **Goal:** Explain how Rote turns a successful Gemini Computer Use run into a reusable, model-free skill — and how it repairs that skill when the UI drifts.
 
+> **Current repo status after the DB pivot:** the old tracked `database/skills/*.macro.json` seed catalog was intentionally deleted because those examples were stale. The local registry still exists for runtime repair/promotion state and explicit demo fixtures, but the voice/chat runtime now uses MongoDB `doc_type=skill` documents via `app.skill_store`.
+
 ---
 
 ## 1. One-sentence summary
@@ -49,8 +51,8 @@ Rote supports two execution surfaces through a **shared replay/repair engine**:
 
 | Surface     | Backend                                                | Input targeting                                                         | Example skills                                       |
 | ----------- | ------------------------------------------------------ | ----------------------------------------------------------------------- | ---------------------------------------------------- |
-| **desktop** | `MacOSDesktopBackend` in `app/verified_replay.py`      | Keyboard shortcuts, app names (`pyautogui` + AppleScript)               | `create_word_file`, `meeting_notes`, `calc_to_word`  |
-| **browser** | `PlaywrightBrowserBackend` in `app/browser_backend.py` | Semantic Playwright locators (`role`, `label`, `text`, `testid`, `css`) | `acme_settings_email`, `youtube_hackathon_top_video` |
+| **desktop** | `MacOSDesktopBackend` in `app/verified_replay.py`      | Keyboard shortcuts, app names (`pyautogui` + AppleScript)               | Runtime/demo macros, plus DB-backed voice/chat skills |
+| **browser** | `PlaywrightBrowserBackend` in `app/browser_backend.py` | Semantic Playwright locators (`role`, `label`, `text`, `testid`, `css`) | Browser repair fixtures and fusion arena traces       |
 
 Both surfaces use the same:
 
@@ -78,7 +80,7 @@ Both surfaces use the same:
 | `app/browser_backend.py`              | Playwright execution + page state inspection.                                                                                       |
 | `app/browser_self_improve.py`         | CLI for browser replay / repair.                                                                                                    |
 | `app/notch.py` + `app/desktop_hud.py` | macOS Dynamic Island-style HUD for live replay narration.                                                                           |
-| `database/skills/*.macro.json`        | Source-of-truth skill definitions (v1 or v2). Runtime versions live in `registry/`.                                                 |
+| `examples/demo_skills/*.macro.json`   | Explicit demo fixtures used by `app.self_improve demo`. Runtime versions live in `database/skills/registry/`.                      |
 
 ---
 

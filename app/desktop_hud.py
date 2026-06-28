@@ -1,6 +1,6 @@
 """Run a macro replay with the Dynamic-Island HUD narrating it live.
 
-  python -m app.desktop_hud --skill create_word_file
+  python -m app.desktop_hud --replay traces/demo.macro.json
 
 The HUD (main thread) animates a spinner + step + progress bar by the notch, while the replay
 runs on a worker thread — so even multi-second app loads look like active progress, not a freeze.
@@ -18,7 +18,7 @@ from .verified_replay import replay_verified
 def main():
     ap = argparse.ArgumentParser()
     source = ap.add_mutually_exclusive_group(required=True)
-    source.add_argument("--skill", help="registered macro name, e.g. create_word_file")
+    source.add_argument("--skill", help="registered runtime macro name")
     source.add_argument("--replay", help="legacy path to a macro JSON file")
     ap.add_argument("--repair", action="store_true", help="repair one failed transition and validate it")
     ap.add_argument("--events", action="store_true",
