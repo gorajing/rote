@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "surface": "desktop",
+  "name": "stale_web_to_textedit_note",
+  "app": "Browser + TextEdit",
+  "os": "macos",
+  "version": 1,
+  "parent_version": null,
+  "status": "active",
+  "note": "Self-improvement demo: copy a real web page heading into TextEdit, starting from a stale assumption that a note already exists.",
+  "params": {
+    "source_url": "https://www.iana.org/help/example-domains",
+    "heading": "Example Domains"
+  },
+  "checker": {
+    "type": "condition",
+    "condition": {
+      "textedit_contains": "{{heading}}"
+    }
+  },
+  "stats": {
+    "uses": 0,
+    "successes": 0,
+    "failures": 0,
+    "success_rate": 0.0,
+    "avg_duration": 0.0,
+    "model_calls": 0
+  },
+  "steps": [
+    {
+      "id": "focus_textedit",
+      "op": "open_app",
+      "app": "TextEdit",
+      "launch_wait": 4,
+      "precondition": {},
+      "postcondition": {
+        "foreground_app": "TextEdit"
+      },
+      "timeout": 4,
+      "retry_limit": 1,
+      "fallback": [],
+      "why": "Focus TextEdit after loading the real webpage heading into the clipboard"
+    },
+    {
+      "id": "paste_web_heading",
+      "op": "hotkey",
+      "keys": [
+        "command",
+        "v"
+      ],
+      "precondition": {
+        "foreground_app": "TextEdit",
+        "clipboard_contains": "{{heading}}"
+      },
+      "postcondition": {
+        "textedit_contains": "{{heading}}"
+      },
+      "timeout": 3,
+      "retry_limit": 0,
+      "fallback": [],
+      "why": "Stale assumption: paste the web heading into the existing TextEdit note"
+    }
+  ]
+}

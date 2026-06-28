@@ -123,8 +123,13 @@ def push(doc: dict) -> str:
     if not isinstance(description, str) or not description.strip():
         raise ValueError("Document must include a non-empty 'description' field")
 
-    doc = {k: v for k, v in doc.items() if k != "_id"}
+    doc = dict(doc)
+    document_id = doc.pop("_id", None)
     document = {**doc, _VECTOR_PATH: _embed(description)}
+    if document_id is not None:
+        document["_id"] = document_id
+        _collection().replace_one({"_id": document_id}, document, upsert=True)
+        return str(document_id)
     return str(_collection().insert_one(document).inserted_id)
 
 

@@ -41,7 +41,7 @@ A hard, deterministic **controlled web app** to measure the engine honestly.
 - **Deterministic checkers** (`app/checker.py`) read `/state` — `dispute_workflow`, `row_find_act`, `settings_change` — so "success" is never self-reported.
 - **Eval harness** (`app/eval_harness.py`) — skills-off ablation, UI-mutation variants, repair-eval.
 
-**The headline metric is unfakeable: CU calls N → 0, verified by ground truth** — a skill that didn't actually achieve its goal is refused, never cached. Generalization is honestly **uneven by family**: `settings_change` replays reliably at **0 CU, verified**; `row_find_act` (refund) generalizes, but crop drift on a held-out row can cost **one self-heal call (CU=1)** before it re-grounds; the modal-heavy `invoice_action` (dispute) workflows are the **hard frontier** — drift escalates and sometimes needs a full recompile. Cold-learning is a live Gemini run, so the exact per-task 0-CU count **varies between runs** (a representative run lands ~3/5 of the sampled tasks at 0 CU verified); the durable claim is not a fixed score but the **mechanism** — drift is paid once, then amortizes to 0, always behind a ground-truth gate. That mechanism is locked down by a hermetic test bank (`tests/`, **37 tests, no key or network**). Reproduce the live eval with:
+**The headline metric is unfakeable: CU calls N → 0, verified by ground truth** — a skill that didn't actually achieve its goal is refused, never cached. Generalization is honestly **uneven by family**: `settings_change` replays reliably at **0 CU, verified**; `row_find_act` (refund) generalizes, but crop drift on a held-out row can cost **one self-heal call (CU=1)** before it re-grounds; the modal-heavy `invoice_action` (dispute) workflows are the **hard frontier** — drift escalates and sometimes needs a full recompile. Cold-learning is a live Gemini run, so the exact per-task 0-CU count **varies between runs** (a representative run lands ~3/5 of the sampled tasks at 0 CU verified); the durable claim is not a fixed score but the **mechanism** — drift is paid once, then amortizes to 0, always behind a ground-truth gate. That mechanism is locked down by a hermetic test bank (`tests/`, **40 tests, no key or network**). Reproduce the live eval with:
 
 ```bash
 python -m app.controlled_app.server                 # arena on :8800
@@ -49,7 +49,7 @@ python -m app.fusion.test_skills --split all        # cold → compile → repla
 python -m unittest discover -s tests                # the deterministic mechanism proof (no key needed)
 ```
 
-**What's proven vs. the frontier.** The demo-safe spine is solid and reproducible: **browser fusion replay at 0 CU**, **settings generalization**, **self-heal that persists** (drift paid once, then free — `validate_persist` drives the live arena to **CU 0 → 1 → 0** across a save/reload-from-disk boundary), and **recall** of a warm skill by plain-language intent. The honest frontier, still model-bound today: arbitrary generalization across *all* 11 tasks (dispute modal drift), the learned web→native-app **hybrid** (Gemini action-safety blocks the cross-context paste — see below), and **live cold-launch of heavy desktop apps** like Word (UI-readiness timing). We ship those as architecture and say plainly where the model stops us.
+**What's proven vs. the frontier.** The demo-safe spine is solid and reproducible: **browser fusion replay at 0 CU**, **settings generalization**, **self-heal that persists** (drift paid once, then free — `validate_persist` drives the live arena to **CU 0 → 1 → 0** across a save/reload-from-disk boundary), **recall** of a warm skill by plain-language intent, and a **non-Acme real-web → TextEdit self-improvement demo** (`stale_web_to_textedit_note`) that fails, repairs, promotes, then replays with 0 model calls. The honest frontier, still model-bound today: arbitrary generalization across *all* 11 tasks (dispute modal drift), the fully learned web→native-app **hybrid** (Gemini action-safety blocks the cross-context paste — see below), and **live cold-launch of heavy desktop apps** like Word (UI-readiness timing). We ship those as architecture and say plainly where the model stops us.
 
 ---
 
@@ -104,6 +104,7 @@ Versioned **macro v2** skills verify every state transition against macOS UI sta
 
 ```bash
 python -m app.self_improve replay create_word_file                         # verified, model-free replay
+python -m app.self_improve demo stale_web_to_textedit_note --metrics traces/web_textedit_self_improvement.json
 python -m app.self_improve demo stale_create_word_file --metrics traces/self_improvement.json
 python -m app.desktop_hud --skill stale_create_word_file --repair          # localize → repair → validate → promote
 python -m app.browser_self_improve replay acme_settings_email --headless   # the same engine, browser surface
@@ -151,7 +152,10 @@ python3 -m app.voice_agent console     # then say: "calculate 52 times 68 and sa
 | `app/verified_replay.py` · `app/verification.py` | condition-checked macro replay + DSL |
 | `app/local_skill_registry.py` · `app/skill_repair.py` | versioned promotion + localized repair |
 | `app/notch.py` · `app/desktop_hud.py` · `app/voice_agent.py` | notch HUD · HUD runner · voice agent |
-| `database/api.py` + `data/` | **optional** vector store (Atlas) for cross-agent skill sharing — *seed/mock data; recall is local-first and does not depend on it* |
+| `database/api.py` + `data/` | **optional** Atlas vector store for cross-agent skill discovery — local seed data plus manually synced descriptors; recall is local-first and does not depend on it |
+
+## Implementation status
+
 | File | Status | Responsibility |
 |---|---|---|
 | `app/schemas.py` | ✅ | frozen contracts: `Task`, `Step`, `Trajectory`, `Skill` |
@@ -177,7 +181,7 @@ python3 -m app.voice_agent console     # then say: "calculate 52 times 68 and sa
 | `app/runner.py` | ✅ | browser entry point / smoke test |
 | `app/trace.py` | ✅ | trajectory recorder |
 | **Not built yet** | | |
-| Atlas registry sync, desktop eval fleet | ⛔ todo | Atlas search descriptors are supported; remote executable registry remains |
+| Automatic learned-skill Atlas seeding, desktop eval fleet | ⛔ todo | Manual Atlas descriptor sync works; newly learned fresh/hybrid artifacts do not auto-seed Atlas yet |
 | `app/mcp_server.py` | ✅ | FastMCP stdio server for desktop skill search, inspection, and verified replay |
 
 ---
@@ -213,6 +217,11 @@ python -m app.skill_search_index --dry-run   # inspect descriptors without writi
 python -m app.skill_search_index             # embed and upsert descriptors in Atlas
 python -m app.mcp_server                     # stdio server (normally launched by the MCP client)
 ```
+
+Atlas is a search index, not the executable source of truth: `app.skill_search_index` publishes
+descriptors for active local desktop macros, and MCP resolves the exact executable version from the
+local registry before replay. Newly learned fresh/hybrid artifacts are saved locally today; automatic
+Atlas seeding for those artifacts is still a TODO.
 
 Example client configuration (use absolute paths on your machine):
 

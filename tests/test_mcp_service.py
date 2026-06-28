@@ -101,6 +101,31 @@ class MCPServiceTests(unittest.TestCase):
 
 
 class DatabaseAPITests(unittest.TestCase):
+    def test_push_upserts_documents_with_deterministic_id(self):
+        class Collection:
+            def replace_one(self, selector, document, upsert=False):
+                self.selector = selector
+                self.document = document
+                self.upsert = upsert
+
+            def insert_one(self, document):
+                raise AssertionError("deterministic documents should be upserted")
+
+        collection = Collection()
+        with patch.object(database_api, "_embed", return_value=[0.1]), \
+             patch.object(database_api, "_collection", return_value=collection):
+            pushed = database_api.push({
+                "_id": "macro:demo:v1",
+                "description": "Create a verified text document",
+                "skill_name": "demo",
+            })
+
+        self.assertEqual(pushed, "macro:demo:v1")
+        self.assertEqual(collection.selector, {"_id": "macro:demo:v1"})
+        self.assertTrue(collection.upsert)
+        self.assertEqual(collection.document["_id"], "macro:demo:v1")
+        self.assertEqual(collection.document["embedding"], [0.1])
+
     def test_retrieve_builds_filtered_vector_pipeline(self):
         class Collection:
             def aggregate(self, pipeline):

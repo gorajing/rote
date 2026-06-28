@@ -351,17 +351,21 @@ Operations: `load_skill`, `create_candidate`, `promote`, `reject`, `record_run`,
 
 ## 9. Self-improvement demo (stale skill fixture)
 
-The branch includes **deterministic stale fixtures** for live demos:
+The project includes **deterministic stale fixtures** for live demos:
 
 | Skill                           | Purpose                                                             |
 | ------------------------------- | ------------------------------------------------------------------- |
 | `stale_ensure_blank_document`   | Subskill that omits `Cmd+N` — Word opens but no document is created |
 | `stale_create_word_file`        | Root workflow that calls the stale subskill                         |
+| `stale_web_to_textedit_note`    | Non-Acme demo: real webpage heading → TextEdit, stale paste assumes an existing note |
 | `stale_youtube_hackathon_video` | Browser-side stale fixture                                          |
 
 `reset_stale_word()` creates the drift state: Word is frontmost with **zero open documents**. Replay fails at the subskill's postcondition (`word_document: true`). Repair generates a replacement step (typically `Cmd+N`), validates end-to-end, and promotes.
 
+`reset_stale_textedit_note()` opens a real public webpage, extracts its heading into the macOS clipboard, and leaves TextEdit frontmost with **zero open documents**. Replay fails when the stale skill tries to paste into a note that does not exist. Repair adds the missing TextEdit document creation, validates that the front document contains the live web heading, promotes the fixed skill, and the next replay runs with zero model calls.
+
 ```bash
+python -m app.self_improve demo stale_web_to_textedit_note --metrics traces/web_textedit_self_improvement.json
 python -m app.self_improve demo stale_create_word_file --metrics traces/self_improvement.json
 ```
 
@@ -381,6 +385,7 @@ python -m app.self_improve replay create_word_file
 python -m app.self_improve repair create_word_file
 
 # Full self-improvement demo (stale → repair → promote → verify)
+python -m app.self_improve demo stale_web_to_textedit_note
 python -m app.self_improve demo stale_create_word_file
 
 # Inspect version history
@@ -448,11 +453,14 @@ Repairing `ensure_blank_document` v1 → v2 benefits both `create_word_file` and
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tests/test_self_improving.py` | v1 migration, parameter resolution, verified replay with fake backend, repair patch cleaning, candidate promotion/rejection, subskill propagation |
 | `tests/test_cross_surface.py`  | Browser semantic target validation, shared replay engine on browser skills, condition composition, HTTP/file checkers                             |
+| `tests/test_fusion_store.py`   | Fusion skill persistence, active-version promotion, superseding, and isolation from the macro registry                                            |
+| `tests/test_self_heal_persist.py` | Fusion self-heal persistence, transient-miss retry, ambiguous-crop rejection, and disk round-trip behavior                                     |
+| `tests/test_mcp_service.py`    | MCP service search/replay contracts, Atlas descriptor projection, DB vector pipeline filters, and deterministic upsert behavior                   |
 
 Run:
 
 ```bash
-python -m unittest tests.test_self_improving tests.test_cross_surface
+python -m unittest discover -s tests -p 'test*.py' -v
 ```
 
 Tests use `FakeBackend` / `BrowserStateBackend` — no real OS or browser required.
@@ -470,7 +478,7 @@ Tests use `FakeBackend` / `BrowserStateBackend` — no real OS or browser requir
 
 ---
 
-## 14. Measured performance (desktop, this branch)
+## 14. Measured performance (desktop, shipped macro track)
 
 | Task                    | Doer (Gemini CU)   | Verified replay    | Speedup |
 | ----------------------- | ------------------ | ------------------ | ------- |
@@ -486,11 +494,11 @@ The headline demo metric: **CU model calls: N → 0** on verified replay.
 
 These are planned (see `docs/PLAN.md`) but **not** part of the current branch:
 
-- MongoDB Atlas remote registry sync
+- Automatic Atlas seeding for newly learned fresh/hybrid artifacts
+- Remote executable registry in Atlas
 - Desktop eval fleet
-- MCP server for cross-agent skill sharing
 
-The local versioned registry and localized repair lifecycle are fully implemented locally.
+The local versioned registry, localized repair lifecycle, manual Atlas descriptor sync, and FastMCP skill search/inspection/replay server are implemented. Atlas is still a discovery index; executable replay resolves against the local registry.
 
 The **hard arena (AcmeBilling structural mutation) IS implemented** — it is no longer a planned item. `app/controlled_app/state.py` defines `VARIANTS = ("baseline", "move_dispute_to_cases", "relabel_export")`, and the server exposes `POST /reset?variant=move_dispute_to_cases` (`app/controlled_app/server.py`) to apply the structural mutation that relocates the dispute action under Cases.
 
@@ -522,7 +530,7 @@ When asked to **extend to a new surface:**
 
 ---
 
-## 17. File index (skills shipped on this branch)
+## 17. File index (shipped skills)
 
 | File                                       | Surface | Description                        |
 | ------------------------------------------ | ------- | ---------------------------------- |
@@ -533,6 +541,7 @@ When asked to **extend to a new surface:**
 | `calc_to_word.macro.json`                  | desktop | Calculator → clipboard → Word      |
 | `stale_ensure_blank_document.macro.json`   | desktop | Stale subskill (no Cmd+N) for demo |
 | `stale_create_word_file.macro.json`        | desktop | Root stale demo workflow           |
+| `stale_web_to_textedit_note.macro.json`    | desktop | Real-web heading → TextEdit stale demo |
 | `acme_settings_email.macro.json`           | browser | Settings form + HTTP checker       |
 | `youtube_hackathon_top_video.macro.json`   | browser | YouTube search workflow            |
 | `stale_youtube_hackathon_video.macro.json` | browser | Stale browser demo fixture         |

@@ -1,7 +1,8 @@
 """A curated suite of BRAND-NEW real-world hybrid skills — fresh public websites paired with a Mac
 app, none from the AcmeBilling arena or the desktop-Word pipeline. Each runs the genuinely-learned
 hybrid loop (Gemini does it once on each surface → compile → 0-CU verified replay) and stores the
-result, growing the recall DB. This is "hybrid tool use" tested on fresh real-world tasks.
+result as a local learned-hybrid artifact. It does not auto-seed Atlas or the recall index yet. This
+is "hybrid tool use" tested on fresh real-world tasks.
 
     python -m app.fusion.fresh_suite                 # run the whole suite (live; real Gemini CU on learn)
     python -m app.fusion.fresh_suite --only python-org

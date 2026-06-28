@@ -1,7 +1,7 @@
 # feat/v0.1 — voice layer + engine changes (merge notes)
 
-What this branch adds on top of unified `main`, and where to start. Aimed at teammates reviewing
-before merging `feat/v0.1 → main`.
+What the merged `feat/v0.1` work added on top of unified `main`, and where to start when reviewing
+or operating the voice path.
 
 ## TL;DR
 - **New: a voice agent** — talk to Rote, it runs your learned desktop skills and narrates live.

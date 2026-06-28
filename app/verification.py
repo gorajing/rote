@@ -63,6 +63,7 @@ def evaluate_condition(condition: dict | None, state: dict, params: dict) -> tup
     exact = {
         "foreground_app": "foreground_app", "url": "url", "title": "title",
         "clipboard": "clipboard", "word_document_count": "word_document_count",
+        "textedit_document_count": "textedit_document_count",
     }
     for key, state_key in exact.items():
         if key in condition and state.get(state_key) != condition[key]:
@@ -70,7 +71,7 @@ def evaluate_condition(condition: dict | None, state: dict, params: dict) -> tup
     contains = {
         "app_window": "windows", "ui_text": "ui_text", "dialog": "ui_text",
         "url_contains": "url", "title_contains": "title", "text_contains": "visible_text",
-        "clipboard_contains": "clipboard",
+        "clipboard_contains": "clipboard", "textedit_contains": "textedit_text",
     }
     for key, state_key in contains.items():
         if key in condition and str(condition[key]).lower() not in str(state.get(state_key, "")).lower():
@@ -79,6 +80,10 @@ def evaluate_condition(condition: dict | None, state: dict, params: dict) -> tup
         failures.append("Word has no open document")
     if condition.get("word_document") is False and state.get("word_document_count", 0) > 0:
         failures.append("Word document unexpectedly open")
+    if condition.get("textedit_document") is True and state.get("textedit_document_count", 0) < 1:
+        failures.append("TextEdit has no open document")
+    if condition.get("textedit_document") is False and state.get("textedit_document_count", 0) > 0:
+        failures.append("TextEdit document unexpectedly open")
     if condition.get("app_running") and condition["app_running"] not in state.get("running_apps", []):
         failures.append(f"application is not running: {condition['app_running']}")
     if condition.get("element_visible"):
