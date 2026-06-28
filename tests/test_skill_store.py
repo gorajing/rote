@@ -57,6 +57,42 @@ class SearchTests(unittest.TestCase):
             self.assertIsNone(skill_store.search("anything"))
 
 
+class FlattenTests(unittest.TestCase):
+    CHILD = {"schema_version": 2, "name": "save_doc", "surface": "desktop", "checker": {},
+             "params": {"filename": "document"},
+             "steps": [{"id": "open_save", "op": "hotkey", "keys": ["command", "s"]},
+                       {"id": "type_name", "op": "type", "text": "{{filename}}"}]}
+    PARENT = {"schema_version": 2, "name": "calc", "surface": "desktop", "checker": {},
+              "params": {"filename": "calc_result", "calculation": "1"},
+              "steps": [{"id": "do_calc", "op": "type", "text": "{{calculation}}"},
+                        {"id": "save", "op": "call", "skill": "save_doc", "params": {"filename": "{{filename}}"}}]}
+
+    class _Reg:
+        def load_skill(self, name, version=None):
+            return dict(FlattenTests.CHILD)
+
+    def test_no_call_steps_remain(self):
+        flat = skill_store.flatten_macro(self.PARENT, registry=self._Reg())
+        self.assertNotIn("call", [s["op"] for s in flat["steps"]])
+
+    def test_subskill_steps_are_inlined_with_unique_ids(self):
+        flat = skill_store.flatten_macro(self.PARENT, registry=self._Reg())
+        ids = [s["id"] for s in flat["steps"]]
+        self.assertEqual(len(ids), len(set(ids)))                 # no duplicate ids
+        self.assertTrue(any(i.startswith("save__") for i in ids)) # inlined under the call id
+
+    def test_placeholders_preserved_through_flatten(self):
+        flat = skill_store.flatten_macro(self.PARENT, registry=self._Reg())
+        texts = [s.get("text") for s in flat["steps"] if s["op"] == "type"]
+        self.assertIn("{{calculation}}", texts)   # top-level placeholder kept
+        self.assertIn("{{filename}}", texts)       # passed through the call, kept parameterizable
+
+    def test_flat_macro_is_valid_for_replay(self):
+        from app.macro_skill import migrate_macro
+        flat = skill_store.flatten_macro(self.PARENT, registry=self._Reg())
+        migrate_macro(flat)                        # must not raise (ids unique, ops allowed)
+
+
 class SaveSkillTests(unittest.TestCase):
     def test_pushes_self_contained_document(self):
         macro = {"schema_version": 2, "name": "calc", "surface": "desktop",

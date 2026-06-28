@@ -14,6 +14,7 @@ CLI:
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import sys
@@ -21,13 +22,43 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from database import api
-from .macro_skill import migrate_macro
+from .local_skill_registry import LocalSkillRegistry
+from .macro_skill import migrate_macro, resolve_params
 
 REPO = Path(__file__).resolve().parent.parent
 LOCAL_SKILLS = REPO / "database" / "skills"
 
 # Atlas vectorSearchScore below which a "hit" isn't really a match -> the agent should learn instead.
 MATCH_THRESHOLD = float(os.getenv("ROTE_SKILL_MATCH_THRESHOLD", "0.82"))
+
+
+def flatten_macro(macro: dict, registry=None) -> dict:
+    """Inline every `call` subskill into one self-contained list of primitive steps, so the stored
+    macro replays from MongoDB with NO local-file lookups. Top-level parameter placeholders
+    (e.g. {{calculation}}, {{filename}}) are preserved so the skill stays parameterizable; only the
+    subskill *structure* is expanded (its params are bound to whatever the call passed)."""
+    registry = registry or LocalSkillRegistry()
+    macro = migrate_macro(macro)
+
+    def inline(steps: list, mapping: dict | None, prefix: str) -> list:
+        out = []
+        for step in steps:
+            if step.get("op") != "call":
+                # top level (mapping is None): keep placeholders. Inside a subskill: bind its params.
+                item = copy.deepcopy(step) if mapping is None else resolve_params(step, mapping)
+                if prefix:                              # keep step ids unique across inlined subskills
+                    item["id"] = f"{prefix}__{item.get('id', 'step')}"
+                out.append(item)
+            else:
+                child = migrate_macro(registry.load_skill(step["skill"], step.get("version")))
+                passed = step.get("params", {})
+                passed = dict(passed) if mapping is None else resolve_params(passed, mapping)
+                child_map = {**child.get("params", {}), **passed}
+                child_prefix = f"{prefix}__{step['id']}" if prefix else step["id"]
+                out.extend(inline(child["steps"], child_map, child_prefix))
+        return out
+
+    return {**{k: v for k, v in macro.items() if k != "steps"}, "steps": inline(macro["steps"], None, "")}
 
 
 def _doc_to_macro(doc: dict) -> dict | None:
@@ -71,8 +102,9 @@ def search(text: str, threshold: float | None = None) -> dict | None:
 def save_skill(macro: dict, description: str, name: str | None = None) -> str:
     """Push a learned skill to the `tasks` collection. This is the `push_database` operation.
 
-    Stores a self-contained, replayable document whose `description` is vector-indexed for search."""
-    macro = migrate_macro(macro)
+    Stores a self-contained, replayable document whose `description` is vector-indexed for search.
+    The macro is flattened first so it has NO `call` steps -> replay needs no local files."""
+    macro = flatten_macro(macro)
     name = name or macro.get("name") or "task"
     doc = {
         "doc_type": "skill",
@@ -126,8 +158,19 @@ def seed_from_local() -> list[str]:
     return ids
 
 
+def clear_skills() -> int:
+    """Delete only our own skill documents (doc_type='skill') from `tasks`. Leaves other docs
+    (e.g. execution traces written by other tooling) untouched."""
+    return api._collection().delete_many({"doc_type": "skill"}).deleted_count
+
+
 def main() -> None:
-    if "--seed" in sys.argv:
+    if "--reseed" in sys.argv:
+        removed = clear_skills()
+        print(f"removed {removed} existing skill doc(s)")
+        ids = seed_from_local()
+        print(f"\nre-seeded {len(ids)} flattened skill(s) into the `tasks` collection.")
+    elif "--seed" in sys.argv:
         ids = seed_from_local()
         print(f"\nseeded {len(ids)} skill(s) into the `tasks` collection.")
     else:
