@@ -44,7 +44,7 @@ class Skill:
     name: str                       # "dispute_unpaid_invoice"
     site: str
     goal_template: str              # "Mark the {status} invoice from {customer} as {action}, add note, export"
-    params: list[dict]              # [{"name": "customer", "type": "str", "required": True}, ...]
+    variables: dict                 # {"customer": {"type": "string", "required": True}, ...}
     preconditions: dict             # {"url_pattern": "/billing", "landmarks": ["invoice table"]}
     steps: list[dict]               # [{"intent":.., "action":.., "target_desc":"Invoices nav item", "param_ref":"customer"}]
     success_checks: list[str]       # human-readable; the REAL check is Task.checker
