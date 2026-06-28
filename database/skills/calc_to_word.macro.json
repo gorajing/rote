@@ -2,7 +2,7 @@
   "name": "calculator_to_word_save",
   "app": "Microsoft Word",
   "os": "macos",
-  "note": "Performs a calculation in Calculator, copies the result, pastes it into a new Word document, and saves the document as 'calc_result' on the Desktop.",
+  "description": "Performs a calculation in Calculator, copies the result, pastes it into a new Word document, and saves the document as 'calc_result' on the Desktop.",
   "params": {
     "calculation": "1234+5678",
     "filename": "calc_result"

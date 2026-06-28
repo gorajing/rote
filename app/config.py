@@ -20,11 +20,12 @@ STUCK_AFTER = 3               # abort if screenshot+url hash is unchanged this m
 # --- controlled arena (AcmeBilling) ---
 APP_URL = os.getenv("ROTE_APP_URL", "http://localhost:8800")
 
-# --- MongoDB Atlas (skill registry) ---
+# --- MongoDB Atlas ---
 MONGO_URI = os.getenv("ROTE_MONGO_URI", "")
-DB_NAME = "rote"
+DB_NAME = "automated_tasks"
 SKILLS_COLLECTION = "skills"
 TRACES_COLLECTION = "traces"
+INSTRUCTIONS_COLLECTION = "tasks"
 
 # --- MiniMax (the "other agent" in the MCP cross-agent beat, P1) ---
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
