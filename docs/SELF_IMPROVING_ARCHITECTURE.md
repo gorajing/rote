@@ -1,6 +1,6 @@
 # Rote Self-Improving Architecture
 
-> **Audience:** AI agents and developers joining the `feat/self-improving` branch.  
+> **Audience:** AI agents and developers working on the self-improving replay/repair engine, now **merged to `main`** (originally landed on `feat/self-improving`).  
 > **Goal:** Explain how Rote turns a successful Gemini Computer Use run into a reusable, model-free skill — and how it repairs that skill when the UI drifts.
 
 ---
@@ -171,6 +171,19 @@ v1 macros (flat step lists without conditions) are migrated in-memory by `migrat
 
 Entry point: `replay_verified()` in `app/verified_replay.py`.
 
+### Replay modes (`optimistic`)
+
+`replay_verified(..., optimistic=False)` is the **default** and the **verified per-step contract**: every step is gated by its pre/postconditions, with retry/fallback accounting and stop-at-failed-step, then a final check against live state. Every self-improvement / repair / validation caller depends on this default — do not change it.
+
+`optimistic=True` is an **opt-in** happy-path speedup for user-facing replay. It executes every step **blind** (dynamic waits, **no per-step `inspect()`**) and verifies **once** with the final checker. It returns `mode="optimistic"` with an **empty `records`** list. The slow per-step verified path only runs as a **diagnostic** afterward — and only when `allow_repair` and a `repair_service` are both supplied (so a real failure can be localized for repair).
+
+Where it is wired:
+
+- **`app/desktop_hud.py`** (voice/notch replay) sets `optimistic=not a.repair` — so the **default HUD voice replay is optimistic**, and it falls back to the verified per-step contract when `--repair` is passed.
+- **`app/desktop_cu.py`** `replay()` calls `replay_verified(..., optimistic=True)` for plain `--replay`.
+
+The algorithm below is the **verified (default) path**; the optimistic path short-circuits it as described above.
+
 ### Algorithm
 
 ```
@@ -213,11 +226,17 @@ Entry point: `replay_verified()` in `app/verified_replay.py`.
   "failure": {               # present when a step or checker fails
     "step_id", "step", "state", "reason"  # "precondition" | "postcondition"
   },
-  "records": [...],          # per-step audit trail
+  "records": [...],          # per-step audit trail (empty list in optimistic mode)
+  "steps": int,              # len(records) on the verified path; len(steps) in optimistic mode
   "elapsed_s": float,
+  "retries": int,            # in-step postcondition retries consumed (0 in optimistic mode)
+  "fallbacks": int,          # fallback ops executed (0 in optimistic mode)
   "model_calls": 0,          # always 0 for pure replay
   "repair_calls": 0,
-  "mode": "verified_replay"
+  "skill_name": str,
+  "skill_version": int,
+  "used_skill": True,
+  "mode": "verified_replay"  # or "optimistic" on the blind fast path
 }
 ```
 
@@ -229,17 +248,22 @@ Defined in `app/verification.py`. Used for step pre/postconditions and final che
 
 ### Leaf conditions
 
-| Key                                                 | Meaning                              |
-| --------------------------------------------------- | ------------------------------------ |
-| `foreground_app`                                    | Exact foreground app name (desktop)  |
-| `app_running`                                       | App appears in running process list  |
-| `app_window` / `ui_text` / `dialog`                 | Substring match in window or UI text |
-| `word_document`                                     | `true` → Word has ≥1 open document   |
-| `clipboard_contains`                                | Substring in clipboard               |
-| `url_contains` / `title_contains` / `text_contains` | Substring match (browser)            |
-| `element_visible`                                   | Text appears in page visible text    |
-| `file_exists`                                       | File exists at location + filename   |
-| `state_equals`                                      | Dot-path lookup into inspect state   |
+| Key                                                 | Meaning                                       |
+| --------------------------------------------------- | --------------------------------------------- |
+| `foreground_app`                                    | Exact foreground app name (desktop)           |
+| `url` / `title`                                     | Exact match on page URL / title (browser)     |
+| `clipboard`                                         | Exact match on clipboard contents (desktop)   |
+| `word_document_count`                               | Exact match on open Word document count       |
+| `app_running`                                       | App appears in running process list           |
+| `app_window` / `ui_text` / `dialog`                 | Substring match in window or UI text          |
+| `word_document`                                     | `true` → Word has ≥1 open document            |
+| `clipboard_contains`                                | Substring in clipboard                        |
+| `url_contains` / `title_contains` / `text_contains` | Substring match (browser)                     |
+| `element_visible`                                   | Text appears in page visible text             |
+| `file_exists`                                       | File exists at location + filename            |
+| `state_equals`                                      | Dot-path lookup into inspect state            |
+
+The exact-equality leaves are `foreground_app`, `url`, `title`, `clipboard`, and `word_document_count` (the value must equal the inspected state exactly); the `*_contains` / `app_window` / `ui_text` / `dialog` / `element_visible` leaves are substring matches.
 
 ### Composition
 
@@ -437,7 +461,7 @@ Tests use `FakeBackend` / `BrowserStateBackend` — no real OS or browser requir
 
 ## 13. Key invariants (do not break)
 
-1. **Replay is model-free.** `replay_verified()` must not call Gemini or capture screenshots unless explicitly routed through repair.
+1. **Replay is model-free — in both modes.** The verified default (`optimistic=False`, per-step pre/postconditions) and the opt-in optimistic mode (`optimistic=True`, execute blind + one final checker, `mode="optimistic"` with empty `records`) each run with **zero model calls**. `replay_verified()` must not call Gemini or capture screenshots unless explicitly routed through repair. Optimistic is opt-in at the call site (the HUD voice path sets `optimistic=not --repair`); the verified default is what every repair/validation caller depends on, so do not change it.
 2. **Checkers are external.** Success is determined by filesystem, HTTP, or OS state — never by model self-report.
 3. **Repair is localized.** At most one failed transition is patched per repair call; patches are 1–6 steps, no coordinates.
 4. **Promotion is success-gated.** A candidate is promoted only after a full clean-state end-to-end replay passes the deterministic checker.
@@ -465,9 +489,10 @@ These are planned (see `docs/PLAN.md`) but **not** part of the current branch:
 - MongoDB Atlas remote registry sync
 - Desktop eval fleet
 - MCP server for cross-agent skill sharing
-- Hard arena (AcmeBilling structural mutation with `/reset?mutation=`)
 
 The local versioned registry and localized repair lifecycle are fully implemented locally.
+
+The **hard arena (AcmeBilling structural mutation) IS implemented** — it is no longer a planned item. `app/controlled_app/state.py` defines `VARIANTS = ("baseline", "move_dispute_to_cases", "relabel_export")`, and the server exposes `POST /reset?variant=move_dispute_to_cases` (`app/controlled_app/server.py`) to apply the structural mutation that relocates the dispute action under Cases.
 
 ---
 
