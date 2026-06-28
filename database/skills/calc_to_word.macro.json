@@ -26,10 +26,7 @@
     },
     {
       "op": "hotkey",
-      "keys": [
-        "command",
-        "c"
-      ],
+      "keys": ["command", "c"],
       "why": "Copy the calculation result"
     },
     {
@@ -40,10 +37,7 @@
     },
     {
       "op": "hotkey",
-      "keys": [
-        "command",
-        "n"
-      ],
+      "keys": ["command", "n"],
       "why": "Create a new document or open the template chooser"
     },
     {
@@ -68,10 +62,7 @@
     },
     {
       "op": "hotkey",
-      "keys": [
-        "command",
-        "v"
-      ],
+      "keys": ["command", "v"],
       "why": "Paste the calculation result"
     },
     {
@@ -81,10 +72,7 @@
     },
     {
       "op": "hotkey",
-      "keys": [
-        "command",
-        "s"
-      ],
+      "keys": ["command", "s"],
       "why": "Trigger the save dialog"
     },
     {
@@ -94,10 +82,7 @@
     },
     {
       "op": "hotkey",
-      "keys": [
-        "command",
-        "d"
-      ],
+      "keys": ["command", "d"],
       "why": "Set the save destination to the Desktop"
     },
     {

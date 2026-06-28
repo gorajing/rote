@@ -9,7 +9,7 @@ import json
 import argparse
 
 from .desktop_cu import replay, probe
-from .hud import Hud
+from .notch import NotchIsland
 
 
 def main():
@@ -21,7 +21,7 @@ def main():
         raise SystemExit("Fix Screen Recording / Accessibility permissions first.")
 
     macro = json.load(open(a.replay))
-    hud = Hud(title=macro.get("name", "Rote"))
+    hud = NotchIsland()
 
     def work():
         replay(macro, on_step=hud.step)
