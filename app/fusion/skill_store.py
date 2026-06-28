@@ -4,8 +4,9 @@ Reuses ikjun's registry on-disk conventions (database/skills/registry/<name>/, v
 active_version, supersede, success-gated promotion) so fusion skills and his keyboard macros
 share one skill-memory tree. Browser fusion skills are crop-gated (a `crop_b64` per spatial step)
 and so are NOT expressible in his keyboard-macro schema — they're stored here in fusion-native
-JSON under their OWN `fusion_index.json`, so his `validate_macro`/`LocalSkillRegistry` code never
-tries to read a fusion skill as a macro.
+JSON: version files are named `fusion-v{N}.json` (NOT `v{N}.json`, so his `LocalSkillRegistry`
+glob `v*.json` can never enumerate them — structural isolation, not reliant on the `fused_*` name
+prefix) under their OWN `fusion_index.json`. His tested macro code cannot read a fusion skill.
 
 This is the cross-run "it remembers" layer: a checker-verified recompile is promoted to a new
 active version, so the next run loads the improved skill instead of recompiling again.
@@ -82,15 +83,17 @@ class FusionSkillStore:
         os.replace(tmp, path)
 
     def _vpath(self, name: str, version: int) -> Path:
-        return self.store / name / f"v{version}.fusion.json"
+        # "fusion-" prefix (not "v") so ikjun's get_history glob `v*.json` can NEVER match a
+        # fusion file, even under a name collision — isolation is structural, not incidental.
+        return self.store / name / f"fusion-v{version}.json"
 
     # ── public API ───────────────────────────────────────────────────────────────────────
     def history(self, name: str) -> list[dict]:
         folder = self.store / name
         out = []
         if folder.exists():
-            for p in sorted(folder.glob("v*.fusion.json"),
-                            key=lambda x: int(x.name.split(".")[0][1:])):
+            for p in sorted(folder.glob("fusion-v*.json"),
+                            key=lambda x: int(x.stem.rsplit("-v", 1)[-1])):
                 d = json.loads(p.read_text(encoding="utf-8"))
                 out.append({"version": int(d["version"]), "status": d.get("status"),
                             "verified": d.get("validation", {}).get("verified")})
