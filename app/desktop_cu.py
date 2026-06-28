@@ -183,13 +183,44 @@ def execute(fname: str, args: dict) -> dict:
         return {"error": f"{type(e).__name__}: {e}"}
 
 
+def _unique_desktop_name(base: str, ext: str = ".docx") -> str:
+    """Avoid overwriting: if base.docx exists on the Desktop, bump to base_2, base_3, ..."""
+    desk = os.path.expanduser("~/Desktop")
+    if not os.path.exists(os.path.join(desk, base + ext)):
+        return base
+    i = 2
+    while os.path.exists(os.path.join(desk, f"{base}_{i}{ext}")):
+        i += 1
+    return f"{base}_{i}"
+
+
+def _uniquify_filename(steps: list) -> list:
+    """The save filename is the first `type` step after Command+S. If that name already exists,
+    rewrite it to a unique one so the replay never stalls on a 'replace existing file?' dialog."""
+    try:
+        s_idx = next(i for i, s in enumerate(steps)
+                     if s.get("op") == "hotkey" and {k.lower() for k in s.get("keys", [])} == {"command", "s"})
+        f_idx = next(i for i, s in enumerate(steps) if i > s_idx and s.get("op") == "type")
+    except StopIteration:
+        return steps
+    base = str(steps[f_idx].get("text", "")).strip()
+    if not base:
+        return steps
+    uniq = _unique_desktop_name(base)
+    if uniq != base:
+        steps = list(steps)
+        steps[f_idx] = {**steps[f_idx], "text": uniq}
+        print(f"       filename '{base}' already on Desktop -> saving as '{uniq}'")
+    return steps
+
+
 def replay(macro: dict, on_step=None):
     """Execute a keyboard-first macro with NO screenshots and NO model calls. This is the
     'compiled skill' fast path — the whole point of learning a skill once and replaying it.
     `on_step(i, total, text)` is called at each step so a HUD can narrate progress live.
     Returns metrics in the same shape as run() so the two are directly comparable."""
     t0 = time.time()
-    steps = macro.get("steps", [])
+    steps = _uniquify_filename(macro.get("steps", []))
     for i, s in enumerate(steps, 1):
         op = s["op"]
         if on_step:
