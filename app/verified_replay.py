@@ -189,6 +189,7 @@ def replay_verified(
                 "retries": 0, "fallbacks": 0, "model_calls": 0, "repair_calls": 0,
                 "skill_name": skill["name"], "skill_version": skill.get("version", 1),
                 "used_skill": True, "mode": "optimistic",
+                "filename": params.get("filename"), "location": params.get("location", "Desktop"),
             }
         if on_event:                                       # failed + repair requested -> diagnose below
             on_event("diagnosing", {"checker_failures": failures})
@@ -252,6 +253,8 @@ def replay_verified(
         "skill_version": skill.get("version", 1),
         "used_skill": True,
         "mode": "verified_replay",
+        "filename": params.get("filename"),
+        "location": params.get("location", "Desktop"),
     }
     if not result["success"] and allow_repair and repair_service is not None:
         if on_event:
