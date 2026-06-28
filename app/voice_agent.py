@@ -26,11 +26,19 @@ from livekit.agents import (
 )
 from livekit.agents.llm import ToolError
 
+import tempfile
+
 from .notch_client import NotchClient, ensure_daemon
+from . import skill_store
+from .desktop_skill_compiler import compile_macro
 
 REPO = Path(__file__).resolve().parent.parent
 load_dotenv(REPO / ".env")                       # LIVEKIT_* + GEMINI/GOOGLE keys
-SKILLS_DIR = REPO / "database" / "skills"
+
+# Skills live ONLY in MongoDB (the `tasks` collection) — no local files at runtime. database_get
+# searches it, computer_use learns + pushes to it. _FOUND caches the macro from the last successful
+# search so run_skill replays it without a second round-trip.
+_FOUND: dict[str, dict] = {}
 
 # The persistent notch companion. NOTCH.send() is fire-and-forget and no-ops if the notch isn't up,
 # so voice works with or without it. _BUSY guards the working ring from being overridden by the
@@ -51,23 +59,9 @@ def _start_notch():
 
 
 def _skill_catalog() -> dict[str, str]:
-    """User-facing DESKTOP tasks: {skill_key: human description}. Excludes browser skills,
-    test fixtures (stale_*), and reusable subskills (building blocks have no final checker)."""
-    out = {}
-    for p in SKILLS_DIR.glob("*.macro.json"):
-        key = p.name[:-len(".macro.json")]
-        if key.startswith("stale_"):
-            continue
-        try:
-            m = json.loads(p.read_text())
-        except Exception:
-            continue
-        if m.get("surface", "desktop") != "desktop":      # skip browser skills
-            continue
-        if not m.get("checker"):                           # subskill / building block -> skip
-            continue
-        out[key] = m.get("note") or m.get("description") or m.get("name") or key
-    return out
+    """User-facing tasks {name: description}, read from MongoDB (the `tasks` collection). DB-only —
+    no local files. Empty if the DB is unreachable/empty; the agent then learns on demand."""
+    return {s["name"]: s["description"] for s in skill_store.list_skills()}
 
 
 def _keyterms(catalog: dict[str, str]) -> list[str]:
@@ -152,41 +146,69 @@ class RoteAssistant(Agent):
         self._catalog = CATALOG
         listing = "\n".join(f"  - {k}: {v}" for k, v in self._catalog.items()) or "  (none yet)"
         super().__init__(instructions=(
-            "You are Rote, a fast voice assistant that performs tasks directly on the user's Mac by "
-            "replaying skills it already learned, instantly and for free. When the user asks you to do "
-            "something that matches a skill, you MUST immediately call the run_skill function with its "
-            "key — actually invoke the tool, never just say that you will. If the user asks for a "
-            "calculation (for example '52 times 68' or 'multiply 7 by 9'), call run_skill with skill "
-            "'calc_to_word' and the 'calculation' argument set to a math expression like '52*68'. Speak "
-            "warmly and conversationally, like a friendly assistant giving a live demo, never robotic "
-            "and never reading a script. No markdown, no lists, no emojis. If nothing matches, "
-            "say you have not learned that task yet and ask if they want you to learn it.\n\n"
-            f"Your learned skills (key: what it does):\n{listing}"
+            "You are Rote, a fast voice assistant that performs tasks directly on the user's Mac. "
+            "Your skills live in a database. For EVERY task request, follow this exact flow:\n"
+            "1. ALWAYS call database_get first, passing a short description of what the user wants. "
+            "It searches the skill database.\n"
+            "2. If database_get returns a skill name, immediately call run_skill with that exact "
+            "name to replay it (instant, free). For a calculation (e.g. '52 times 68'), use the "
+            "matched skill and set the 'calculation' argument to a math expression like '52*68'.\n"
+            "3. If database_get finds nothing, immediately call computer_use with the user's full "
+            "request as the 'intent'. That figures the task out live AND learns it, so next time it "
+            "is instant. Never tell the user you cannot do a task — learn it with computer_use.\n"
+            "Always actually invoke the tools, never just say you will. Speak warmly and "
+            "conversationally, like a friendly live demo, never robotic. No markdown, lists, or emojis.\n\n"
+            f"Skills currently in the database (name: what it does):\n{listing}"
         ))
 
     @function_tool()
-    async def run_skill(self, context: RunContext, skill: str, calculation: str = "") -> str:
-        """Replay a learned desktop skill on the user's Mac right now. Use this whenever the user
-        asks you to perform a task that matches one of your known skills.
+    async def database_get(self, context: RunContext, description: str) -> str:
+        """ALWAYS call this first for any task. Searches the MongoDB skill database semantically for
+        a skill matching the user's request.
 
         Args:
-            skill: The key of the skill to run, exactly one of the known skill keys.
-            calculation: Only for the 'calc_to_word' skill — the arithmetic the user asked for, as a
+            description: A short description of what the user wants done (e.g. "calculate two numbers
+                and save the result in Word", "create a word file", "take meeting notes").
+
+        Returns a message telling you whether a skill was found and, if so, its exact name to pass to
+        run_skill. If nothing is found, call computer_use to learn the task.
+        """
+        NOTCH.send("thinking", title="Searching skills…")
+        macro = await asyncio.to_thread(skill_store.search, description)
+        if macro is None:
+            return ("No matching skill is in the database. Call computer_use with the user's full "
+                    "request as the intent to learn it now.")
+        name = (macro.get("name") or "task").strip().replace(" ", "_").lower()
+        _FOUND[name] = macro                          # cache so run_skill needs no second DB round-trip
+        return f"Found a learned skill named '{name}'. Call run_skill with skill='{name}' now."
+
+    @function_tool()
+    async def run_skill(self, context: RunContext, skill: str, calculation: str = "") -> str:
+        """Replay a skill found via database_get on the user's Mac right now. Only call this after
+        database_get returned a skill name.
+
+        Args:
+            skill: The exact skill name database_get returned.
+            calculation: Only for the calculation skill — the arithmetic the user asked for, as a
                 plain math expression using + - * / (for example "52*68" for "52 times 68"). Leave
                 empty for other skills or when no calculation was requested.
         """
         skill = skill.strip().replace(" ", "_").lower()
-        path = SKILLS_DIR / f"{skill}.macro.json"
-        if not path.exists():
+        macro = _FOUND.get(skill) or await asyncio.to_thread(skill_store.search, skill.replace("_", " "))
+        if macro is None:
             raise ToolError(
-                f"No skill named '{skill}'. Known skills: {', '.join(self._catalog) or 'none'}."
+                f"No skill '{skill}' in the database. Use computer_use to learn it first."
             )
         context.disallow_interruptions()             # desktop action — don't cut it off mid-run
         pretty = skill.replace("_", " ")
 
+        # write the DB macro to a temp file so the (file-based) replay CLI can run it
+        tmp = tempfile.NamedTemporaryFile("w", suffix=".macro.json", delete=False)
+        json.dump(macro, tmp, default=str); tmp.close()
+        replay_path = tmp.name
         # --headless: the replay emits @@EV but does NOT open its own notch; this agent owns the one
         # persistent notch and renders the step stream onto it (see the @@EV loop below).
-        cmd = ["python3", "-u", "-m", "app.desktop_hud", "--replay", str(path), "--events", "--headless"]
+        cmd = ["python3", "-u", "-m", "app.desktop_hud", "--replay", replay_path, "--events", "--headless"]
         if calculation.strip():                       # dynamic calculation -> override macro params
             expected = _eval_calc(calculation)
             if expected is None:
@@ -256,6 +278,61 @@ class RoteAssistant(Agent):
             return random.choice(_DONE)
         finally:
             _BUSY["skill"] = False
+            try:
+                os.unlink(replay_path)
+            except OSError:
+                pass
+
+    @function_tool()
+    async def computer_use(self, context: RunContext, intent: str) -> str:
+        """Learn a NEW task the database doesn't have yet. Drives the Mac with Gemini computer-use to
+        do the task live, then compiles what it did into a skill and pushes it to the database, so
+        next time database_get finds it and it replays instantly. Only call this after database_get
+        found nothing.
+
+        Args:
+            intent: The user's full request, phrased as a task to perform (e.g. "Create a new
+                Microsoft Word document, type 'Hello', and save it to the Desktop as notes").
+        """
+        context.disallow_interruptions()              # long live operation — don't cut it off
+        _BUSY["skill"] = True
+        NOTCH.send("thinking", title="Learning this…", subtitle=intent[:44])
+        _say(context.session, "I haven't done this one before. Let me work it out live, watch.")
+        trace = tempfile.NamedTemporaryFile("w", suffix=".trace.json", delete=False); trace.close()
+        cmd = ["python3", "-u", "-m", "app.desktop_cu", "--intent", intent, "--trace", trace.name]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, cwd=str(REPO),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+            tail = []
+            assert proc.stdout is not None
+            async for raw in proc.stdout:
+                tail.append(raw.decode("utf-8", "ignore"))
+            await proc.wait()
+            if proc.returncode != 0:
+                NOTCH.send("error", title="Couldn't finish")
+                await asyncio.sleep(1.4)
+                raise ToolError(f"I couldn't complete that task: {''.join(tail)[-300:]}")
+
+            # the doer recorded a trace (its logs); the compiler (a 2nd Gemini pass) authors the skill
+            NOTCH.send("thinking", title="Saving the new skill…")
+            with open(trace.name, encoding="utf-8") as fh:
+                trace_data = json.load(fh)
+            macro = await asyncio.to_thread(compile_macro, trace_data)
+            name = (macro.get("name") or "task").strip().replace(" ", "_").lower()
+            await asyncio.to_thread(skill_store.save_skill, macro, intent, name)
+            _FOUND[name] = macro                      # ready to replay immediately if asked again
+            NOTCH.send("done", title="Learned", subtitle=name.replace("_", " "))
+            await asyncio.sleep(1.2)
+            return ("Done — I worked it out and saved it to the database, so next time it runs "
+                    "instantly with no thinking.")
+        finally:
+            _BUSY["skill"] = False
+            try:
+                os.unlink(trace.name)
+            except OSError:
+                pass
 
 
 def _notch_step_title(op: str, app: str, is_save: bool) -> str:

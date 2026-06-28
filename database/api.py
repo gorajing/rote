@@ -148,6 +148,13 @@ def retrieve(search_text: str, top_k: int = 5) -> list[dict]:
     return list(_collection().aggregate(pipeline))
 
 
+def list_all(limit: int = 200) -> list[dict]:
+    """Return stored documents (without their embedding vectors) for cataloging."""
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    return list(_collection().find({}, {_VECTOR_PATH: 0}).limit(limit))
+
+
 def _print_local_results(results: list[dict | Skill]) -> None:
     if not results:
         print("No matching entries found.")
