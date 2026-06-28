@@ -9,3 +9,4 @@ traces/
 .pytest_cache/
 node_modules/
 *.log
+database/skills/registry/

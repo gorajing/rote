@@ -1,0 +1,63 @@
+{
+  "schema_version": 2,
+  "surface": "browser",
+  "name": "youtube_hackathon_top_video",
+  "app": "YouTube",
+  "os": "any",
+  "version": 1,
+  "parent_version": null,
+  "status": "active",
+  "note": "Search YouTube for AI Engineer World's Hackathon and open the first video result.",
+  "start_url": "https://www.youtube.com",
+  "params": {
+    "query": "AI Engineer World's Hackathon"
+  },
+  "checker": {
+    "type": "condition",
+    "condition": {
+      "url_contains": "/watch"
+    }
+  },
+  "stats": {
+    "uses": 0,
+    "successes": 0,
+    "failures": 0,
+    "success_rate": 0.0,
+    "avg_duration": 0.0,
+    "model_calls": 0
+  },
+  "steps": [
+    {
+      "id": "open_search_results",
+      "op": "navigate",
+      "url": "https://www.youtube.com/results?search_query=AI+Engineer+World%27s+Hackathon",
+      "precondition": {},
+      "postcondition": {
+        "url_contains": "/results",
+        "text_contains": "AI Engineer"
+      },
+      "timeout": 15,
+      "retry_limit": 1,
+      "fallback": [],
+      "why": "Search YouTube for AI Engineer World's Hackathon"
+    },
+    {
+      "id": "open_top_video",
+      "op": "click",
+      "target": {
+        "css": "ytd-video-renderer a#video-title",
+        "first": true
+      },
+      "precondition": {
+        "url_contains": "/results"
+      },
+      "postcondition": {
+        "url_contains": "/watch"
+      },
+      "timeout": 15,
+      "retry_limit": 1,
+      "fallback": [],
+      "why": "Open the first video in the search results"
+    }
+  ]
+}

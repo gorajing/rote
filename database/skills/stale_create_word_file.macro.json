@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "name": "stale_create_word_file",
+  "app": "Microsoft Word",
+  "os": "macos",
+  "version": 1,
+  "parent_version": null,
+  "status": "active",
+  "note": "Self-improvement demo root that uses a deterministically stale document preparation subskill.",
+  "params": {"text": "Hello from self-improving Rote.", "filename": "rote_self_improved", "location": "Desktop"},
+  "checker": {"type": "word_docx", "location": "{{location}}", "filename": "{{filename}}.docx", "contains": "{{text}}"},
+  "stats": {"uses": 0, "successes": 0, "failures": 0, "success_rate": 0.0, "avg_duration": 0.0, "model_calls": 0},
+  "steps": [
+    {"id": "prepare_document", "op": "call", "skill": "stale_ensure_blank_document", "params": {}, "precondition": {}, "postcondition": {}, "timeout": 10, "retry_limit": 0, "fallback": [], "why": "Run the stale document preparation skill"},
+    {"id": "enter_content", "op": "type", "text": "{{text}}", "precondition": {"foreground_app": "Microsoft Word", "word_document": true}, "postcondition": {"word_document": true}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Type the requested content"},
+    {"id": "save_document", "op": "call", "skill": "save_word_document", "params": {"filename": "{{filename}}", "location": "{{location}}"}, "precondition": {}, "postcondition": {}, "timeout": 12, "retry_limit": 0, "fallback": [], "why": "Save and verify the repaired workflow"}
+  ]
+}

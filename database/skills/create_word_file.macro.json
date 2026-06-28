@@ -1,0 +1,66 @@
+{
+  "schema_version": 2,
+  "name": "create_word_file",
+  "app": "Microsoft Word",
+  "os": "macos",
+  "version": 1,
+  "parent_version": null,
+  "status": "active",
+  "note": "Create and verify a parameterized Word document on the Desktop.",
+  "params": {
+    "text": "Hello from Gemini Computer Use.",
+    "filename": "gemini",
+    "location": "Desktop"
+  },
+  "checker": {
+    "type": "word_docx",
+    "location": "{{location}}",
+    "filename": "{{filename}}.docx",
+    "contains": "{{text}}"
+  },
+  "stats": {
+    "uses": 0,
+    "successes": 0,
+    "failures": 0,
+    "success_rate": 0.0,
+    "avg_duration": 0.0,
+    "model_calls": 0
+  },
+  "steps": [
+    {
+      "id": "prepare_document",
+      "op": "call",
+      "skill": "ensure_blank_document",
+      "params": {},
+      "precondition": {},
+      "postcondition": {},
+      "timeout": 10,
+      "retry_limit": 0,
+      "fallback": [],
+      "why": "Open Word and ensure a blank document is ready"
+    },
+    {
+      "id": "enter_content",
+      "op": "type",
+      "text": "{{text}}",
+      "precondition": {"foreground_app": "Microsoft Word", "word_document": true},
+      "postcondition": {"word_document": true},
+      "timeout": 3,
+      "retry_limit": 0,
+      "fallback": [],
+      "why": "Write the requested document content"
+    },
+    {
+      "id": "save_document",
+      "op": "call",
+      "skill": "save_word_document",
+      "params": {"filename": "{{filename}}", "location": "{{location}}"},
+      "precondition": {},
+      "postcondition": {},
+      "timeout": 12,
+      "retry_limit": 0,
+      "fallback": [],
+      "why": "Save and verify the Word document"
+    }
+  ]
+}

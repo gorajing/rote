@@ -1,0 +1,35 @@
+{
+  "schema_version": 2,
+  "name": "meeting_notes",
+  "app": "Microsoft Word",
+  "os": "macos",
+  "version": 1,
+  "parent_version": null,
+  "status": "active",
+  "note": "Create formatted meeting notes using shared verified Word subskills.",
+  "params": {
+    "title": "Rote Meeting Notes",
+    "line_1": "Computer use is slow because of model latency.",
+    "line_2": "Compiled skills replay with no model calls.",
+    "filename": "meeting_notes",
+    "location": "Desktop"
+  },
+  "checker": {
+    "type": "word_docx",
+    "location": "{{location}}",
+    "filename": "{{filename}}.docx",
+    "contains": ["{{title}}", "{{line_1}}", "{{line_2}}"]
+  },
+  "stats": {"uses": 0, "successes": 0, "failures": 0, "success_rate": 0.0, "avg_duration": 0.0, "model_calls": 0},
+  "steps": [
+    {"id": "prepare_document", "op": "call", "skill": "ensure_blank_document", "params": {}, "precondition": {}, "postcondition": {}, "timeout": 10, "retry_limit": 0, "fallback": [], "why": "Prepare a blank Word document"},
+    {"id": "bold_on", "op": "hotkey", "keys": ["command", "b"], "precondition": {"word_document": true}, "postcondition": {"word_document": true}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Enable bold title formatting"},
+    {"id": "enter_title", "op": "type", "text": "{{title}}", "precondition": {"word_document": true}, "postcondition": {"word_document": true}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Type the meeting title"},
+    {"id": "title_newline", "op": "key", "key": "return", "precondition": {"word_document": true}, "postcondition": {"word_document": true}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Start the body paragraph"},
+    {"id": "bold_off", "op": "hotkey", "keys": ["command", "b"], "precondition": {"word_document": true}, "postcondition": {"word_document": true}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Disable bold body formatting"},
+    {"id": "enter_line_1", "op": "type", "text": "{{line_1}}", "precondition": {"word_document": true}, "postcondition": {"word_document": true}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Type the first meeting note"},
+    {"id": "body_newline", "op": "key", "key": "return", "precondition": {"word_document": true}, "postcondition": {"word_document": true}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Start the second note line"},
+    {"id": "enter_line_2", "op": "type", "text": "{{line_2}}", "precondition": {"word_document": true}, "postcondition": {"word_document": true}, "timeout": 3, "retry_limit": 0, "fallback": [], "why": "Type the second meeting note"},
+    {"id": "save_document", "op": "call", "skill": "save_word_document", "params": {"filename": "{{filename}}", "location": "{{location}}"}, "precondition": {}, "postcondition": {}, "timeout": 12, "retry_limit": 0, "fallback": [], "why": "Save and verify the meeting notes"}
+  ]
+}
