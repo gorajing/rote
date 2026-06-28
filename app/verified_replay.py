@@ -32,17 +32,6 @@ class MacOSDesktopBackend:
             return {}
         if op == "wait":
             return {"settled_s": settle(max_wait=float(step.get("seconds", 2)))}
-        if op == "delete_file":
-            # deterministically remove the target before saving, so the GUI Save never stalls on
-            # the macOS "replace existing file?" dialog (this is the duplicate-filename fix).
-            location = _location_path(step.get("location", "Desktop"))
-            fname = step["filename"]
-            fname = fname if fname.endswith(".docx") else f"{fname}.docx"
-            try:
-                os.remove(location / fname)
-                return {"deleted": str(location / fname)}
-            except FileNotFoundError:
-                return {"deleted": None}
         if op == "hotkey":
             pyautogui.hotkey(*[_KEYMAP.get(key.lower(), key.lower()) for key in step["keys"]])
         elif op == "key":
@@ -95,6 +84,22 @@ def _location_path(location: str) -> Path:
     return Path(os.path.expanduser(location))
 
 
+def _ensure_unique_filename(params: dict) -> dict:
+    """Never overwrite: if <filename>.docx already exists at <location>, bump to <filename>_2,
+    _3, ... (macOS-style) so the new run keeps the user's previous files. Computed ONCE up front
+    so the save step, the verify step, and the final checker all use the same unique name."""
+    fname = params.get("filename")
+    if not fname:
+        return params
+    location = _location_path(params.get("location", "Desktop"))
+    if not (location / f"{fname}.docx").exists():
+        return params
+    i = 2
+    while (location / f"{fname}_{i}.docx").exists():
+        i += 1
+    return {**params, "filename": f"{fname}_{i}"}
+
+
 def docx_contains(path: Path, expected: str) -> bool:
     return _docx_contains(path, expected)
 
@@ -145,6 +150,7 @@ def replay_verified(
     started = time.time()
     skill = migrate_macro(skill)
     params = {**skill.get("params", {}), **(params or {})}
+    params = _ensure_unique_filename(params)             # keep old files; save as name_2, name_3, ...
     backend = backend or MacOSDesktopBackend()
     registry = registry or LocalSkillRegistry()
     records = []
