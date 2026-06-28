@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import copy
 
-VARIANTS = ("baseline", "move_dispute_to_cases")
+VARIANTS = ("baseline", "move_dispute_to_cases", "relabel_export")
 
 DISPUTE_REASONS = (
     "Duplicate charge",
